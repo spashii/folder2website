@@ -1,0 +1,24 @@
+{
+  "name": "docsite",
+  "version": "0.1.0",
+  "type": "module",
+  "bin": {
+    "docsite": "index.ts"
+  },
+  "scripts": {
+    "build": "bun run index.ts"
+  },
+  "dependencies": {
+    "@resvg/resvg-js": "^2.6.2",
+    "marked": "^18.0.5",
+    "marked-alert": "^2.1.2",
+    "marked-footnote": "^1.4.0",
+    "marked-shiki": "^1.2.1",
+    "marked-smartypants": "^1.1.12",
+    "satori": "^0.26.0",
+    "shiki": "^4.2.0"
+  },
+  "devDependencies": {
+    "@fontsource/lexend": "^5.2.11"
+  }
+}
