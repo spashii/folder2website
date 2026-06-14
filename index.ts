@@ -264,7 +264,7 @@ function pageHtml({ title, tagline, body, theme, extraCss, depth, og, canonical,
   const copy = `<button class="linkish copy-md" data-md="${esc(twin)}">Copy as Markdown</button>`;
   const sameCommit = updated?.hash && created?.hash && updated.hash === created.hash;
   const lines = [sameCommit ? "" : commitLine("Updated", updated), commitLine("Created", created)].filter(Boolean);
-  const madeWith = `Made with <a href="https://github.com/spashii/folder2website" data-popover-title="spashii/folder2website" data-popover-description="Point it at a repo or any markdown folder, get a clean website.">spashii/folder2website</a>`;
+  const madeWith = `Website made with <a href="https://github.com/spashii/folder2website" data-popover-title="spashii/folder2website" data-popover-description="Point it at a repo or any markdown folder, get a clean website.">spashii/folder2website</a>`;
   const meta = `\n      <footer class="meta"><div class="meta-actions">${[gitLink, copy].filter(Boolean).join(" · ")}</div>${lines.map((line) => `<div class="meta-line">${line}</div>`).join("")}<div class="meta-line">${madeWith}</div></footer>`;
   const script = `<script>
 for (const b of document.querySelectorAll(".copy-md")) b.onclick = async () => {
