@@ -4,7 +4,7 @@
 // self-contained static site. Bun-native. No config, no frontmatter.
 //
 //   folder2website <path-or-repo> [--out <dir>] [--token <T>] [--entry f.md ...]
-//                                 [--base-url https://...] [--serve]
+//                                 [--base-url https://...] [--clone-dir <dir>] [--port 4321] [--serve]
 //
 // ponytail: a small script, not a framework. Want search/sidebar/versioning?
 // reach for VitePress instead of growing this.
@@ -15,19 +15,19 @@ import markedAlert from "marked-alert";
 import markedFootnote from "marked-footnote";
 import { markedSmartypants } from "marked-smartypants";
 import { codeToHtml } from "shiki";
-import { existsSync, readdirSync, statSync } from "node:fs";
-import { join, resolve, posix, extname } from "node:path";
+import { existsSync, mkdirSync, readdirSync, statSync } from "node:fs";
+import { dirname, join, resolve, posix, extname } from "node:path";
 import { tmpdir } from "node:os";
 import { makeOgPng } from "./og.ts";
 
 const argv = process.argv.slice(2);
-const usage = "usage: folder2website <path-or-repo> [--out <dir>] [--token <T>] [--entry f.md ...] [--base-url <url>] [--serve]";
+const usage = "usage: folder2website <path-or-repo> [--out <dir>] [--token <T>] [--entry f.md ...] [--base-url <url>] [--clone-dir <dir>] [--port <n>] [--serve]";
 if (argv.includes("-h") || argv.includes("--help")) {
   console.log(usage);
   process.exit(0);
 }
 const flag = (n) => { const i = argv.indexOf(n); return i >= 0 ? argv[i + 1] : undefined; };
-const flags = new Set(["--out", "--token", "--entry", "--base-url"]);
+const flags = new Set(["--out", "--token", "--entry", "--base-url", "--clone-dir", "--port"]);
 const target = argv.filter((a, i) => !a.startsWith("-") && !flags.has(argv[i - 1]))[0];
 if (!target) {
   console.error(usage);
@@ -36,6 +36,12 @@ if (!target) {
 const token = flag("--token") ?? process.env.GITHUB_TOKEN;
 const outDir = resolve(flag("--out") ?? "site");
 const baseUrl = flag("--base-url")?.replace(/\/$/, "");
+const clonePath = flag("--clone-dir") ? resolve(flag("--clone-dir")) : null;
+const port = Number(flag("--port") ?? 4321);
+if (!Number.isInteger(port) || port < 1 || port > 65535) {
+  console.error("--port must be an integer from 1 to 65535");
+  process.exit(1);
+}
 const seeds = argv.reduce((a, x, i) => (x === "--entry" && argv[i + 1] ? [...a, argv[i + 1]] : a), []);
 
 const here = import.meta.dir;
@@ -51,6 +57,17 @@ const esc = (s) => s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g
 const ogTagline = (s) => { const f = s.split(/(?<=[.!?])\s/)[0]; return f.length <= 140 ? f : f.slice(0, 137).replace(/\s+\S*$/, "") + "…"; };
 const isLocal = (h) => h && !/^[a-z][a-z0-9+.-]*:/i.test(h) && !h.startsWith("//") && !h.startsWith("/") && !h.startsWith("#");
 const outName = (rel) => rel.replace(/\.md$/i, ".html").replace(/(^|\/)(readme)\.html$/i, "$1index.html");
+const relativeDate = (date) => {
+  if (!date) return "";
+  const then = new Date(`${date}T00:00:00Z`);
+  if (Number.isNaN(then.getTime())) return date;
+  const days = Math.max(0, Math.floor((Date.now() - then.getTime()) / 86400000));
+  if (days < 1) return "less than a day ago";
+  for (const [size, unit] of [[365, "year"], [30, "month"], [7, "week"], [1, "day"]]) {
+    const n = Math.floor(days / size);
+    if (n >= 1) return `${n} ${unit}${n === 1 ? "" : "s"} ago`;
+  }
+};
 const relAsset = (mdRel, p) => {
   const r = posix.normalize(posix.join(posix.dirname(mdRel), decodeURIComponent(p.split("#")[0])));
   return r.startsWith("..") ? null : r;
@@ -80,10 +97,20 @@ async function resolveRoot() {
   }
   const url = target.startsWith("http") ? target : `https://github.com/${target}.git`;
   const auth = token ? url.replace("https://", `https://x-access-token:${token}@`) : url;
-  const dest = join(tmpdir(), "folder2website-clone", target.replace(/[^\w.-]+/g, "_"));
-  await $`rm -rf ${dest}`.quiet();
-  console.log(`cloning ${target} ...`);
-  await $`git clone --depth 1 ${auth} ${dest}`.quiet();
+  const dest = clonePath ?? join(tmpdir(), "folder2website-clone", target.replace(/[^\w.-]+/g, "_"));
+  if (existsSync(dest)) {
+    if (!existsSync(join(dest, ".git"))) throw new Error(`clone path exists but is not a git repo: ${dest}`);
+    console.log(`using existing clone: ${dest}`);
+    console.log("not fetching or pulling automatically; if it may be stale, run:");
+    console.log(`  git -C "${dest}" pull`);
+    const status = await gitOut(["-C", dest, "status", "--short", "--branch"]);
+    if (status) console.log(status.split("\n").map((l) => `  ${l}`).join("\n"));
+    return dest;
+  }
+  mkdirSync(dirname(dest), { recursive: true });
+  console.log(`cloning ${target} -> ${dest} ...`);
+  await $`git clone ${auth} ${dest}`.quiet();
+  console.log(`cloned to ${dest}`);
   return dest;
 }
 
@@ -92,10 +119,37 @@ async function gitInfo(root) {
   const m = remote.match(/github\.com[:/](.+?)(?:\.git)?$/);
   if (!m) return null;
   const branch = (await gitOut(["-C", root, "rev-parse", "--abbrev-ref", "HEAD"])) || "main";
-  return { blob: `https://github.com/${m[1]}/blob/${branch}` };
+  return { repo: m[1], blob: `https://github.com/${m[1]}/blob/${branch}` };
 }
-const lastUpdated = (root, f) => gitOut(["-C", root, "log", "-1", "--format=%cs", "--", f]);
-const firstCommit = async (root, f) => (await gitOut(["-C", root, "log", "--reverse", "--format=%cs", "--", f])).split("\n")[0] || "";
+const parseCommit = (line) => {
+  const [hash, date, name, email] = line.split("\t");
+  return hash ? { hash, date, name, email } : null;
+};
+const commitLog = async (root, f, args) => parseCommit(await gitOut(["-C", root, "log", ...args, "--format=%H%x09%cs%x09%an%x09%ae", "--", f]));
+const loginFromEmail = (email = "") => email.match(/^(?:\d+\+)?([^@]+)@users\.noreply\.github\.com$/)?.[1] || "";
+const githubAuthorCache = new Map();
+async function githubAuthor(repo, hash) {
+  if (!repo || !hash) return "";
+  const key = `${repo}:${hash}`;
+  if (githubAuthorCache.has(key)) return githubAuthorCache.get(key);
+  try {
+    const headers = { "user-agent": "folder2website" };
+    if (token) headers.authorization = `Bearer ${token}`;
+    const r = await fetch(`https://api.github.com/repos/${repo}/commits/${hash}`, { headers });
+    const login = r.ok ? (await r.json()).author?.login || "" : "";
+    githubAuthorCache.set(key, login);
+    return login;
+  } catch {
+    githubAuthorCache.set(key, "");
+    return "";
+  }
+}
+async function commitInfo(root, f, git, args) {
+  const c = await commitLog(root, f, args);
+  if (!c) return null;
+  c.login = await githubAuthor(git?.repo, c.hash) || loginFromEmail(c.email);
+  return c;
+}
 
 async function loadManifest(root) {
   const p = join(root, "manifest.json");
@@ -139,7 +193,7 @@ function enrichHeadings(body) {
   return { body: tocHtml && body.includes("</h1>") ? body.replace("</h1>", "</h1>\n" + tocHtml) : tocHtml + body };
 }
 
-async function renderMd(src, mdRel, queue, seen, assets, { skipLogo = false } = {}) {
+async function renderMd(src, mdRel, queue, seen, assets) {
   src = src.trim();
   const title = src.match(/^#\s+(.+)$/m)?.[1].trim() ?? posix.basename(mdRel);
   const tagline = src.split(/\n\s*\n/).map((b) => b.trim())
@@ -147,7 +201,7 @@ async function renderMd(src, mdRel, queue, seen, assets, { skipLogo = false } = 
 
   let body = await marked.parse(src);
   // ponytail: regexes over marked's own output (controlled input)
-  if (!skipLogo) body = body.replace(/^\s*<p>\s*(<img )([^>]*>)\s*<\/p>/, '$1class="logo" $2');
+  body = body.replaceAll("<table>", '<div class="table-wrap"><table>').replaceAll("</table>", "</table></div>");
   body = body.replace(/<p>((?:\s*<img[^>]*>\s*)+)<\/p>/g, (_m, imgs) =>
     `<div class="${(imgs.match(/<img/g) || []).length > 3 ? "shots" : "imgrow"}">${imgs}</div>`);
   body = body.replace("<p>", '<p class="tagline">');
@@ -169,10 +223,17 @@ async function renderMd(src, mdRel, queue, seen, assets, { skipLogo = false } = 
   return { title, tagline, body, src };
 }
 
+function authorHtml(commit) {
+  if (!commit) return "";
+  if (commit.login) return `<a href="https://github.com/${esc(commit.login)}">@${esc(commit.login)}</a>`;
+  return esc(commit.name || commit.email || "unknown");
+}
+const commitLine = (label, commit) => commit ? `${label} ${relativeDate(commit.date)} by ${authorHtml(commit)}` : "";
+
 function pageHtml({ title, tagline, body, theme, extraCss, depth, og, canonical, isIndex, siteTitle, logo, editUrl, updated, created, twin, themeColor, themeColorDark, hasManifest }) {
   const prefix = "../".repeat(depth);
   const css = theme.replace(/url\("fonts\//g, `url("${prefix}fonts/`) + (extraCss || "");
-  const favicon = logo || body.match(/<img[^>]*\bsrc="([^"]+)"/)?.[1];
+  const favicon = logo;
   const icon = favicon ? `<link rel="icon" href="${esc(favicon)}"${favicon.endsWith(".svg") ? ' type="image/svg+xml"' : ""} />\n    ` : "";
   const ogTags = og ? `<meta property="og:image" content="${esc(og)}" />\n    <meta name="twitter:card" content="summary_large_image" />\n    ` : "";
   const canon = canonical ? `<link rel="canonical" href="${esc(canonical)}" />\n    ` : "";
@@ -182,10 +243,66 @@ function pageHtml({ title, tagline, body, theme, extraCss, depth, og, canonical,
   const mani = hasManifest ? `<link rel="manifest" href="${prefix}manifest.json" />\n    ` : "";
   const heroLogo = isIndex && logo ? `<img class="logo" src="${esc(logo)}" width="84" height="84" alt="${esc(siteTitle)} logo" />\n      ` : "";
   const home = !isIndex ? `<a class="home" href="${prefix}index.html">← ${esc(siteTitle)}</a>\n      ` : "";
-  const gitLink = editUrl ? ` · <a href="${esc(editUrl)}">Edit on GitHub</a>` : "";
-  const dates = [updated ? `Updated ${updated}` : "", created && created !== updated ? `Created ${created}` : ""].filter(Boolean).join(" · ");
-  const meta = `\n      <footer class="meta"><button class="linkish copy-md" data-md="${esc(twin)}">Copy as Markdown</button>${gitLink}${dates ? " · " + dates : ""}</footer>`;
-  const script = `<script>for(const b of document.querySelectorAll(".copy-md"))b.onclick=async()=>{await navigator.clipboard.writeText(await(await fetch(b.dataset.md)).text());const o=b.textContent;b.textContent="Copied";setTimeout(()=>b.textContent=o,900)};for(const p of document.querySelectorAll("pre.shiki")){const b=document.createElement("button");b.className="copy-code";b.textContent="Copy";b.onclick=async()=>{await navigator.clipboard.writeText(p.querySelector("code")?.innerText??p.innerText);const o=b.textContent;b.textContent="Copied";setTimeout(()=>b.textContent=o,900)};p.appendChild(b)};(()=>{const c={};let pop;async function load(h){if(c[h])return c[h];try{const d=new DOMParser().parseFromString(await(await fetch(h)).text(),"text/html");return c[h]={t:(d.querySelector("h1")?.textContent||d.title||"").trim(),d:(d.querySelector(".tagline")?.textContent||"").trim()}}catch{return c[h]={t:"",d:""}}}for(const a of document.querySelectorAll('.wrap a[href$=".html"],.wrap a.home')){let tm;a.addEventListener("mouseenter",()=>{tm=setTimeout(async()=>{const{t,d}=await load(a.href);if(!t)return;pop?.remove();pop=document.createElement("div");pop.className="popover";const s=document.createElement("strong");s.textContent=t;pop.appendChild(s);if(d){const x=document.createElement("span");x.textContent=d;pop.appendChild(x)}document.body.appendChild(pop);const r=a.getBoundingClientRect();pop.style.left=Math.min(scrollX+r.left,scrollX+innerWidth-pop.offsetWidth-12)+"px";pop.style.top=(scrollY+r.bottom+8)+"px"},180)});a.addEventListener("mouseleave",()=>{clearTimeout(tm);pop?.remove();pop=null})}})()</script>`;
+  const gitLink = editUrl ? `<a href="${esc(editUrl)}">Edit on GitHub</a>` : "";
+  const copy = `<button class="linkish copy-md" data-md="${esc(twin)}">Copy as Markdown</button>`;
+  const sameCommit = updated?.hash && created?.hash && updated.hash === created.hash;
+  const lines = [sameCommit ? "" : commitLine("Updated", updated), commitLine("Created", created)].filter(Boolean);
+  const meta = `\n      <footer class="meta"><div class="meta-actions">${[gitLink, copy].filter(Boolean).join(" · ")}</div>${lines.map((line) => `<div class="meta-line">${line}</div>`).join("")}</footer>`;
+  const script = `<script>
+for (const b of document.querySelectorAll(".copy-md")) b.onclick = async () => {
+  await navigator.clipboard.writeText(await (await fetch(b.dataset.md)).text());
+  const o = b.textContent; b.textContent = "Copied"; setTimeout(() => b.textContent = o, 900);
+};
+for (const p of document.querySelectorAll("pre.shiki")) {
+  const b = document.createElement("button"); b.className = "copy-code"; b.textContent = "Copy";
+  b.onclick = async () => {
+    await navigator.clipboard.writeText(p.querySelector("code")?.innerText ?? p.innerText);
+    const o = b.textContent; b.textContent = "Copied"; setTimeout(() => b.textContent = o, 900);
+  };
+  p.appendChild(b);
+}
+(() => {
+  const box = document.createElement("div"); box.className = "lightbox"; box.hidden = true;
+  const img = document.createElement("img");
+  const closeButton = document.createElement("button"); closeButton.type = "button"; closeButton.textContent = "Close"; closeButton.setAttribute("aria-label", "Close image preview");
+  box.append(img, closeButton); document.body.appendChild(box);
+  const close = () => { box.hidden = true; document.body.classList.remove("lightbox-open"); img.removeAttribute("src"); };
+  const open = (source) => { img.src = source.currentSrc || source.src; img.alt = source.alt || ""; box.hidden = false; document.body.classList.add("lightbox-open"); closeButton.focus(); };
+  for (const source of document.querySelectorAll(".wrap img")) {
+    source.tabIndex = 0; source.setAttribute("role", "button"); source.setAttribute("aria-label", "Open image preview");
+    source.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); open(source); });
+    source.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(source); } });
+  }
+  box.addEventListener("click", (e) => { if (e.target === box || e.target === closeButton) close(); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !box.hidden) close(); });
+})();
+(() => {
+  const c = {}; let pop;
+  async function load(h) {
+    if (c[h]) return c[h];
+    try {
+      const d = new DOMParser().parseFromString(await (await fetch(h)).text(), "text/html");
+      return c[h] = { t: (d.querySelector("h1")?.textContent || d.title || "").trim(), d: (d.querySelector(".tagline")?.textContent || "").trim() };
+    } catch { return c[h] = { t: "", d: "" }; }
+  }
+  for (const a of document.querySelectorAll('.wrap a[href$=".html"], .wrap a.home')) {
+    let tm;
+    a.addEventListener("mouseenter", () => {
+      tm = setTimeout(async () => {
+        const { t, d } = await load(a.href); if (!t) return;
+        pop?.remove(); pop = document.createElement("div"); pop.className = "popover";
+        const s = document.createElement("strong"); s.textContent = t; pop.appendChild(s);
+        if (d) { const x = document.createElement("span"); x.textContent = d; pop.appendChild(x); }
+        document.body.appendChild(pop);
+        const r = a.getBoundingClientRect();
+        pop.style.left = Math.min(scrollX + r.left, scrollX + innerWidth - pop.offsetWidth - 12) + "px";
+        pop.style.top = (scrollY + r.bottom + 8) + "px";
+      }, 180);
+    });
+    a.addEventListener("mouseleave", () => { clearTimeout(tm); pop?.remove(); pop = null; });
+  }
+})();
+</script>`;
   return `<!DOCTYPE html>
 <html lang="en">
   <head>
@@ -231,7 +348,7 @@ async function build(root, { serve = false } = {}) {
     seen.add(mdRel);
     const abs = join(root, mdRel);
     if (!existsSync(abs)) { console.warn(`  missing: ${mdRel}`); continue; }
-    pages.push({ mdRel, ...(await renderMd(await readText(abs), mdRel, queue, seen, assets, { skipLogo: !!cfg.logo })) });
+    pages.push({ mdRel, ...(await renderMd(await readText(abs), mdRel, queue, seen, assets)) });
   }
   if (!pages.length) throw new Error("no pages - is there a README.md?");
 
@@ -251,8 +368,8 @@ async function build(root, { serve = false } = {}) {
     pg.og = pg.makeOg ? (base ? `${base}/${posix.dirname(pg.outRel) === "." ? "" : posix.dirname(pg.outRel) + "/"}${pg.ogFile}` : pg.ogFile) : null;
     pg.canonical = base ? `${base}/${pg.isIndex ? "" : pg.outRel}` : null;
     pg.editUrl = git ? `${git.blob}/${pg.mdRel}` : null;
-    pg.updated = git ? await lastUpdated(root, pg.mdRel) : "";
-    pg.created = git ? await firstCommit(root, pg.mdRel) : "";
+    pg.updated = git ? await commitInfo(root, pg.mdRel, git, ["-1"]) : null;
+    pg.created = git ? await commitInfo(root, pg.mdRel, git, ["--reverse"]) : null;
   }
   for (const pg of pages) {
     await write(join(outDir, pg.outRel), pageHtml({ ...pg, theme, extraCss: override, siteTitle, themeColor: manifest?.background_color, themeColorDark: ext.dark?.bg, hasManifest: !!manifest }));
@@ -325,7 +442,7 @@ if (argv.includes("--serve")) {
   await ensureFresh();
   const reload = `<script>let v=null;setInterval(async()=>{const n=await(await fetch("/__v")).text();if(v===null)v=n;else if(n!==v)location.reload()},400)</script>`;
   const server = Bun.serve({
-    port: 4321,
+    port,
     async fetch(req) {
       const p = decodeURIComponent(new URL(req.url).pathname);
       if (p === "/__v") return new Response(String(sourceSig(root)));

@@ -9,11 +9,14 @@ stack (`marked` + plugins, `satori`, `shiki`).
 
 ```sh
 folder2website <path-or-repo> [--out <dir>] [--token <T>] [--entry f.md ...]
-                              [--base-url https://...] [--serve]
+                              [--base-url https://...] [--clone-dir <dir>]
+                              [--port 4321] [--serve]
 
 folder2website .                          # current repo -> ./site
 folder2website owner/repo --token $GH_PAT # clone a (private) GitHub repo
 folder2website . --base-url https://x.com # + sitemap, robots, llms.txt, per-page OG
+folder2website owner/repo --clone-dir /tmp/repo # reuse this clone path if present
+folder2website . --serve --port 4322       # live preview on a custom port
 folder2website . --serve                  # live preview on :4321, reloads on save
 folder2website -h                         # print usage
 ```
@@ -48,6 +51,10 @@ of reusing an older cached bare GitHub spec.
   becomes its own page, links rewritten `.md` to `.html` (`README` to `index`).
 - Assets (images, `LICENSE`, ...) copied at their original paths.
 - `--entry` to seed extra/alternate pages (repeatable; default `README.md`).
+- `--clone-dir` to choose the exact clone destination for a remote repo. If it
+  already exists, folder2website uses it as-is, prints git status, and never
+  fetches or pulls automatically.
+- `--port` to choose the live preview port when using `--serve` (default `4321`).
 
 ### Reads like the repo (GitHub fidelity)
 
@@ -65,7 +72,7 @@ of reusing an older cached bare GitHub spec.
 ### Polish
 
 - Auto OG image (Satori), per-page with `--base-url`; bundled Lexend.
-- Git footer: "Edit on GitHub" plus created/updated dates, from git log.
+- Git footer: "Edit on GitHub" plus created/updated dates and authors, from git log.
 - Theming from a standard web app `manifest.json` (name, icons, colors); extra
   palette and dark mode under a `readme_site` key.
 - Hover link previews, internal link rewriting, live-reload dev server.
