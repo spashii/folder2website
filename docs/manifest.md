@@ -4,8 +4,9 @@ Your `manifest.json` stays a normal web app manifest; folder2website reads a few
 standard keys for theming and an optional `readme_site` key for the rest. No
 manifest, no problem — sensible defaults apply.
 
-Drop a `manifest.json` at the repo root. It's parsed once at build time, copied
-into the output (so the site is installable), and linked from every page via
+Drop a `manifest.json` at the repo root, or pass `--manifest <path>`. Relative
+paths resolve from the target repo. The selected file is parsed once at build
+time, copied into the output as `manifest.json`, and linked from every page via
 `<link rel="manifest">`. If it's missing or invalid JSON, it's ignored and the
 built-in theme is used.
 

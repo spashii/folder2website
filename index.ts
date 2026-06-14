@@ -4,7 +4,7 @@
 // self-contained static site. Bun-native. No config, no frontmatter.
 //
 //   folder2website <path-or-repo> [--out <dir>] [--token <T>] [--entry f.md ...]
-//                                 [--base-url https://...] [--clone-dir <dir>] [--port 4321] [--serve]
+//                                 [--base-url https://...] [--manifest <path>] [--clone-dir <dir>] [--port 4321] [--serve]
 //
 // ponytail: a small script, not a framework. Want search/sidebar/versioning?
 // reach for VitePress instead of growing this.
@@ -21,13 +21,13 @@ import { tmpdir } from "node:os";
 import { makeOgPng } from "./og.ts";
 
 const argv = process.argv.slice(2);
-const usage = "usage: folder2website <path-or-repo> [--out <dir>] [--token <T>] [--entry f.md ...] [--base-url <url>] [--clone-dir <dir>] [--port <n>] [--serve]";
+const usage = "usage: folder2website <path-or-repo> [--out <dir>] [--token <T>] [--entry f.md ...] [--base-url <url>] [--manifest <path>] [--clone-dir <dir>] [--port <n>] [--serve]";
 if (argv.includes("-h") || argv.includes("--help")) {
   console.log(usage);
   process.exit(0);
 }
 const flag = (n) => { const i = argv.indexOf(n); return i >= 0 ? argv[i + 1] : undefined; };
-const flags = new Set(["--out", "--token", "--entry", "--base-url", "--clone-dir", "--port"]);
+const flags = new Set(["--out", "--token", "--entry", "--base-url", "--manifest", "--clone-dir", "--port"]);
 const target = argv.filter((a, i) => !a.startsWith("-") && !flags.has(argv[i - 1]))[0];
 if (!target) {
   console.error(usage);
@@ -36,6 +36,7 @@ if (!target) {
 const token = flag("--token") ?? process.env.GITHUB_TOKEN;
 const outDir = resolve(flag("--out") ?? "site");
 const baseUrl = flag("--base-url")?.replace(/\/$/, "");
+const manifestArg = flag("--manifest");
 const clonePath = flag("--clone-dir") ? resolve(flag("--clone-dir")) : null;
 const port = Number(flag("--port") ?? 4321);
 if (!Number.isInteger(port) || port < 1 || port > 65535) {
@@ -169,10 +170,17 @@ async function commitInfo(root, f, git, args) {
 }
 
 async function loadManifest(root) {
-  const p = join(root, "manifest.json");
-  if (!existsSync(p)) return null;
-  try { return JSON.parse(await readText(p)); }
-  catch (e) { console.warn(`  manifest.json ignored: ${e.message}`); return null; }
+  const p = manifestArg ? resolve(root, manifestArg) : join(root, "manifest.json");
+  if (!existsSync(p)) {
+    if (manifestArg) console.warn(`  manifest ignored: missing ${p}`);
+    return null;
+  }
+  try {
+    const manifest = JSON.parse(await readText(p));
+    Object.defineProperty(manifest, "__path", { value: p });
+    return manifest;
+  }
+  catch (e) { console.warn(`  manifest ignored: ${e.message}`); return null; }
 }
 function pickIcon(icons) {
   if (!Array.isArray(icons) || !icons.length) return null;
@@ -404,7 +412,7 @@ async function build(root, { serve = false } = {}) {
     else console.warn(`  missing asset: ${a}`);
   }
   if (cfg.logo && existsSync(join(root, cfg.logo))) await copy(join(root, cfg.logo), join(outDir, cfg.logo));
-  if (manifest) await copy(join(root, "manifest.json"), join(outDir, "manifest.json"));
+  if (manifest) await copy(manifest.__path, join(outDir, "manifest.json"));
   for (const f of ["lexend-400.woff2", "lexend-700.woff2", "lexend-OFL.txt"])
     await copy(font(f), join(outDir, "fonts", f));
 
@@ -441,6 +449,7 @@ async function build(root, { serve = false } = {}) {
 function sourceSig(root) {
   let s = 0;
   try { s += statSync(themePath).mtimeMs; } catch {}
+  try { if (manifestArg) s += statSync(resolve(root, manifestArg)).mtimeMs; } catch {}
   try {
     for (const f of readdirSync(root, { recursive: true })) {
       if (typeof f === "string" && /\.(md|json|css|png|jpe?g|svg)$/i.test(f) && !/(^|[\\/])(node_modules|\.git|site)([\\/]|$)/.test(f)) {
