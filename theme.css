@@ -161,9 +161,6 @@ pre.shiki:hover .copy-code, .copy-code:focus { opacity: 1; }
 .footnotes { margin-top: 40px; border-top: 1px solid var(--line); padding-top: 14px; color: var(--fg); }
 .footnotes li { border: 0; padding: 4px 0; }
 .footnotes a, sup a, [data-footnote-ref] { color: var(--accent); text-decoration: none; }
-/* external-link icon on content links only */
-.wrap a[href^="http"]::after { content: "\2197"; font-size: .72em; vertical-align: super; margin: 0 4px 0 3px; color: var(--accent); }
-.wrap a.home::after, .wrap .toc a::after, .wrap a.anchor::after, .wrap .meta a::after, .wrap a:has(img)::after { content: none !important; }
 /* hover link previews */
 .popover { position: fixed; z-index: 50; max-width: min(320px, calc(100vw - 24px)); padding: 12px 14px; background: var(--bg);
   color: var(--fg); border: 1px solid var(--line); border-radius: 12px;
