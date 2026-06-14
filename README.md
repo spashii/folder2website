@@ -74,7 +74,8 @@ of reusing an older cached bare GitHub spec.
 - Auto OG image (Satori), per-page with `--base-url`; bundled Lexend.
 - Git footer: "Edit on GitHub" plus created/updated dates and authors, from git log.
 - Theming from a standard web app `manifest.json` (name, icons, colors); extra
-  palette and dark mode under a `readme_site` key.
+  palette and dark mode under a `readme_site` key. See
+  [manifest.md](docs/manifest.md) for the full mapping.
 - Hover link previews, internal link rewriting, live-reload dev server.
 
 ## Notes
