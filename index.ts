@@ -1,33 +1,22 @@
 #!/usr/bin/env bun
-// docsite — render a repo's README (and every .md it links to) as a
-// clean, self-contained static site. No config, no frontmatter.
+// folder2website - render a repo's README (and every .md it links to), or any
+// folder of markdown (a Notion/Obsidian export, a skills dir), as a clean,
+// self-contained static site. Bun-native. No config, no frontmatter.
 //
-//   readme-site <path-or-repo> [--out <dir>] [--token <T>] [--entry f.md ...]
-//                              [--base-url https://...] [--serve]
-//
-//   <path-or-repo>  a local folder, or a GitHub "owner/repo" / URL (cloned;
-//                   use --token or $GITHUB_TOKEN for private repos)
-//   --entry         seed page(s); repeatable. Default: README.md
-//   --base-url      enables sitemap.xml, robots.txt, canonical + per-page OG
-//
-// Starts at the entry/-ies, follows links to local .md recursively (each -> its
-// own page, links rewritten .md->.html, README->index), copies referenced
-// assets. Luxuries, all derived: first <h1> -> title; first paragraph -> lede;
-// lone image up top -> logo; consecutive images -> carousel; fenced code ->
-// Shiki highlight; headings -> anchors + auto table-of-contents; a git footer
-// (edit link + last-updated); bundled Lexend + Satori OG image.
+//   folder2website <path-or-repo> [--out <dir>] [--token <T>] [--entry f.md ...]
+//                                 [--base-url https://...] [--serve]
 //
 // ponytail: a small script, not a framework. Want search/sidebar/versioning?
 // reach for VitePress instead of growing this.
+import { $ } from "bun";
 import { marked } from "marked";
 import markedShiki from "marked-shiki";
 import markedAlert from "marked-alert";
 import markedFootnote from "marked-footnote";
 import { markedSmartypants } from "marked-smartypants";
 import { codeToHtml } from "shiki";
-import { $ } from "bun";
-import { join, resolve, posix, extname } from "node:path";
 import { existsSync, readdirSync, statSync } from "node:fs";
+import { join, resolve, posix, extname } from "node:path";
 import { tmpdir } from "node:os";
 import { makeOgPng } from "./og.ts";
 
@@ -36,20 +25,27 @@ const flag = (n) => { const i = argv.indexOf(n); return i >= 0 ? argv[i + 1] : u
 const flags = new Set(["--out", "--token", "--entry", "--base-url"]);
 const target = argv.filter((a, i) => !a.startsWith("--") && !flags.has(argv[i - 1]))[0];
 if (!target) {
-  console.error("usage: readme-site <path-or-repo> [--out <dir>] [--token <T>] [--entry f.md ...] [--base-url <url>] [--serve]");
+  console.error("usage: folder2website <path-or-repo> [--out <dir>] [--token <T>] [--entry f.md ...] [--base-url <url>] [--serve]");
   process.exit(1);
 }
 const token = flag("--token") ?? process.env.GITHUB_TOKEN;
 const outDir = resolve(flag("--out") ?? "site");
 const baseUrl = flag("--base-url")?.replace(/\/$/, "");
 const seeds = argv.reduce((a, x, i) => (x === "--entry" && argv[i + 1] ? [...a, argv[i + 1]] : a), []);
-const themePath = join(import.meta.dir, "theme.css");
+
 const here = import.meta.dir;
+const themePath = join(here, "theme.css");
+const font = (f) => join(here, "fonts", f);
+
+const readText = (p) => Bun.file(p).text();
+const write = (p, data) => Bun.write(p, data); // Bun.write creates parent dirs
+const copy = (src, dest) => Bun.write(dest, Bun.file(src));
+const gitOut = async (args) => { try { return (await $`git ${args}`.nothrow().quiet().text()).trim(); } catch { return ""; } };
 
 const esc = (s) => s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+const ogTagline = (s) => { const f = s.split(/(?<=[.!?])\s/)[0]; return f.length <= 140 ? f : f.slice(0, 137).replace(/\s+\S*$/, "") + "…"; };
 const isLocal = (h) => h && !/^[a-z][a-z0-9+.-]*:/i.test(h) && !h.startsWith("//") && !h.startsWith("/") && !h.startsWith("#");
 const outName = (rel) => rel.replace(/\.md$/i, ".html").replace(/(^|\/)(readme)\.html$/i, "$1index.html");
-const ogTagline = (s) => { const f = s.split(/(?<=[.!?])\s/)[0]; return f.length <= 140 ? f : f.slice(0, 137).replace(/\s+\S*$/, "") + "…"; };
 const relAsset = (mdRel, p) => {
   const r = posix.normalize(posix.join(posix.dirname(mdRel), decodeURIComponent(p.split("#")[0])));
   return r.startsWith("..") ? null : r;
@@ -79,7 +75,7 @@ async function resolveRoot() {
   }
   const url = target.startsWith("http") ? target : `https://github.com/${target}.git`;
   const auth = token ? url.replace("https://", `https://x-access-token:${token}@`) : url;
-  const dest = join(tmpdir(), "readme-site", target.replace(/[^\w.-]+/g, "_"));
+  const dest = join(tmpdir(), "folder2website-clone", target.replace(/[^\w.-]+/g, "_"));
   await $`rm -rf ${dest}`.quiet();
   console.log(`cloning ${target} ...`);
   await $`git clone --depth 1 ${auth} ${dest}`.quiet();
@@ -87,31 +83,19 @@ async function resolveRoot() {
 }
 
 async function gitInfo(root) {
-  try {
-    const remote = (await $`git -C ${root} config --get remote.origin.url`.nothrow().quiet().text()).trim();
-    const m = remote.match(/github\.com[:/](.+?)(?:\.git)?$/);
-    if (!m) return null;
-    const branch = (await $`git -C ${root} rev-parse --abbrev-ref HEAD`.nothrow().quiet().text()).trim() || "main";
-    return { blob: `https://github.com/${m[1]}/blob/${branch}` };
-  } catch { return null; }
+  const remote = await gitOut(["-C", root, "config", "--get", "remote.origin.url"]);
+  const m = remote.match(/github\.com[:/](.+?)(?:\.git)?$/);
+  if (!m) return null;
+  const branch = (await gitOut(["-C", root, "rev-parse", "--abbrev-ref", "HEAD"])) || "main";
+  return { blob: `https://github.com/${m[1]}/blob/${branch}` };
 }
-async function lastUpdated(root, mdRel) {
-  try { return (await $`git -C ${root} log -1 --format=%cs -- ${mdRel}`.nothrow().quiet().text()).trim(); }
-  catch { return ""; }
-}
-async function firstCommit(root, mdRel) {
-  try { return (await $`git -C ${root} log --reverse --format=%cs -- ${mdRel}`.nothrow().quiet().text()).trim().split("\n")[0] || ""; }
-  catch { return ""; }
-}
+const lastUpdated = (root, f) => gitOut(["-C", root, "log", "-1", "--format=%cs", "--", f]);
+const firstCommit = async (root, f) => (await gitOut(["-C", root, "log", "--reverse", "--format=%cs", "--", f])).split("\n")[0] || "";
 
-// Standard W3C web app manifest.json drives the site: name/description/icons/
-// theme_color/background_color. Things the spec has no field for live under an
-// optional "readme_site" key (extra palette, dark mode, content width, baseUrl,
-// extra css) — a browser ignores it, so the file stays a valid PWA manifest.
 async function loadManifest(root) {
   const p = join(root, "manifest.json");
   if (!existsSync(p)) return null;
-  try { return JSON.parse(await Bun.file(p).text()); }
+  try { return JSON.parse(await readText(p)); }
   catch (e) { console.warn(`  manifest.json ignored: ${e.message}`); return null; }
 }
 function pickIcon(icons) {
@@ -130,7 +114,7 @@ async function manifestCss(manifest, ext, root) {
     const d = decls({ bg: ext.dark.bg, fg: ext.dark.fg, muted: ext.dark.muted, line: ext.dark.line, accent: ext.dark.accent });
     if (d) css += `@media(prefers-color-scheme:dark){:root{${d}}}`;
   }
-  if (ext.css) { const f = join(root, ext.css); if (existsSync(f)) css += "\n" + (await Bun.file(f).text()); }
+  if (ext.css) { const f = join(root, ext.css); if (existsSync(f)) css += "\n" + (await readText(f)); }
   return css ? `\n/* web app manifest */\n${css}\n` : "";
 }
 
@@ -157,9 +141,8 @@ async function renderMd(src, mdRel, queue, seen, assets, { skipLogo = false } = 
     .find((b) => b && !b.startsWith("#") && !b.startsWith("!["))?.replace(/\s+/g, " ") || "";
 
   let body = await marked.parse(src);
-  // ponytail: regexes over marked's own output (controlled input) — swap to a DOM pass if READMEs carry arbitrary HTML
+  // ponytail: regexes over marked's own output (controlled input)
   if (!skipLogo) body = body.replace(/^\s*<p>\s*(<img )([^>]*>)\s*<\/p>/, '$1class="logo" $2');
-  // a run of images: >3 -> swipeable carousel, otherwise a static row
   body = body.replace(/<p>((?:\s*<img[^>]*>\s*)+)<\/p>/g, (_m, imgs) =>
     `<div class="${(imgs.match(/<img/g) || []).length > 3 ? "shots" : "imgrow"}">${imgs}</div>`);
   body = body.replace("<p>", '<p class="tagline">');
@@ -227,25 +210,25 @@ function detectReadme(root) {
 }
 
 async function build(root, { serve = false } = {}) {
-  const theme = await Bun.file(themePath).text();
+  const theme = await readText(themePath);
   const git = await gitInfo(root);
   const manifest = await loadManifest(root);
   const ext = manifest?.readme_site || {};
   const cfg = { title: manifest?.name || manifest?.short_name, description: manifest?.description, logo: manifest ? pickIcon(manifest.icons) : null };
   const base = baseUrl || ext.baseUrl?.replace(/\/$/, "") || null;
   const override = manifest ? await manifestCss(manifest, ext, root) : "";
+
   const queue = (seeds.length ? seeds : [detectReadme(root)]).map((s) => posix.normalize(s));
   const seen = new Set(), assets = new Set(), pages = [];
-
   while (queue.length) {
     const mdRel = posix.normalize(queue.shift());
     if (seen.has(mdRel)) continue;
     seen.add(mdRel);
     const abs = join(root, mdRel);
     if (!existsSync(abs)) { console.warn(`  missing: ${mdRel}`); continue; }
-    pages.push({ mdRel, ...(await renderMd(await Bun.file(abs).text(), mdRel, queue, seen, assets, { skipLogo: !!cfg.logo })) });
+    pages.push({ mdRel, ...(await renderMd(await readText(abs), mdRel, queue, seen, assets, { skipLogo: !!cfg.logo })) });
   }
-  if (!pages.length) throw new Error("no pages — is there a README.md?");
+  if (!pages.length) throw new Error("no pages - is there a README.md?");
 
   if (!pages.some((p) => outName(p.mdRel) === "index.html")) pages[0].asIndex = true;
   const siteTitle = cfg.title || (pages.find((p) => p.asIndex || outName(p.mdRel) === "index.html") ?? pages[0]).title;
@@ -267,23 +250,20 @@ async function build(root, { serve = false } = {}) {
     pg.created = git ? await firstCommit(root, pg.mdRel) : "";
   }
   for (const pg of pages) {
-    await Bun.write(join(outDir, pg.outRel), pageHtml({ ...pg, theme, extraCss: override, siteTitle, themeColor: manifest?.background_color, themeColorDark: ext.dark?.bg, hasManifest: !!manifest }));
-    // the .md twin: clean source for agents/humans (README link -> index twin)
-    await Bun.write(join(outDir, pg.twinRel), pg.src.replace(/(\]\([^)]*?)README\.md/gi, "$1index.md"));
+    await write(join(outDir, pg.outRel), pageHtml({ ...pg, theme, extraCss: override, siteTitle, themeColor: manifest?.background_color, themeColorDark: ext.dark?.bg, hasManifest: !!manifest }));
+    await write(join(outDir, pg.twinRel), pg.src.replace(/(\]\([^)]*?)README\.md/gi, "$1index.md"));
   }
-
-  if (cfg.logo) assets.add(cfg.logo);
-  if (manifest) await Bun.write(join(outDir, "manifest.json"), Bun.file(join(root, "manifest.json")));
   let copied = 0;
   for (const a of assets) {
     const from = join(root, a);
-    if (existsSync(from)) { await Bun.write(join(outDir, a), Bun.file(from)); copied++; }
+    if (existsSync(from)) { await copy(from, join(outDir, a)); copied++; }
     else console.warn(`  missing asset: ${a}`);
   }
+  if (cfg.logo && existsSync(join(root, cfg.logo))) await copy(join(root, cfg.logo), join(outDir, cfg.logo));
+  if (manifest) await copy(join(root, "manifest.json"), join(outDir, "manifest.json"));
   for (const f of ["lexend-400.woff2", "lexend-700.woff2", "lexend-OFL.txt"])
-    await Bun.write(join(outDir, "fonts", f), Bun.file(join(here, "fonts", f)));
+    await copy(font(f), join(outDir, "fonts", f));
 
-  // OG images (skipped during --serve for fast reloads)
   const ogPages = pages.filter((p) => p.makeOg);
   if (ogPages.length) {
     try {
@@ -292,30 +272,28 @@ async function build(root, { serve = false } = {}) {
       if (manifest?.background_color) vars.bg = manifest.background_color;
       if (manifest?.theme_color) vars.accent = manifest.theme_color;
       if (ext.fg) vars.fg = ext.fg;
-      const regular = await Bun.file(join(here, "fonts", "lexend-400.woff")).arrayBuffer();
-      const bold = await Bun.file(join(here, "fonts", "lexend-700.woff")).arrayBuffer();
+      const regular = await Bun.file(font("lexend-400.woff")).arrayBuffer();
+      const bold = await Bun.file(font("lexend-700.woff")).arrayBuffer();
       for (const pg of ogPages) {
         const png = await makeOgPng({ title: pg.title, tagline: ogTagline(pg.tagline || pg.title), regular, bold, bg: vars.bg, fg: vars.fg, accent: vars.accent });
-        await Bun.write(join(outDir, posix.dirname(pg.outRel), pg.ogFile), png);
+        await write(join(outDir, posix.dirname(pg.outRel), pg.ogFile), png);
       }
-    } catch (e) { console.warn(`  og: skipped — ${e.message}`); }
+    } catch (e) { console.warn(`  og: skipped - ${e.message}`); }
   }
 
   if (base) {
     const urls = pages.map((p) => `  <url><loc>${base}/${p.isIndex ? "" : p.outRel}</loc></url>`).join("\n");
-    await Bun.write(join(outDir, "sitemap.xml"), `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls}\n</urlset>\n`);
-    await Bun.write(join(outDir, "robots.txt"), `User-agent: *\nAllow: /\nSitemap: ${base}/sitemap.xml\n`);
-    // llms.txt — agent-friendly index pointing at the .md twins (the "agent's md")
+    await write(join(outDir, "sitemap.xml"), `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls}\n</urlset>\n`);
+    await write(join(outDir, "robots.txt"), `User-agent: *\nAllow: /\nSitemap: ${base}/sitemap.xml\n`);
     const idx = pages.find((p) => p.isIndex) ?? pages[0];
     const docs = pages.map((p) => `- [${p.title}](${base}/${p.twinRel}): ${ogTagline(p.tagline || p.title)}`).join("\n");
-    await Bun.write(join(outDir, "llms.txt"), `# ${idx.title}\n\n> ${idx.tagline}\n\n## Docs\n\n${docs}\n`);
-    await Bun.write(join(outDir, "llms-full.txt"), pages.map((p) => p.src).join("\n\n---\n\n") + "\n");
+    await write(join(outDir, "llms.txt"), `# ${idx.title}\n\n> ${idx.tagline}\n\n## Docs\n\n${docs}\n`);
+    await write(join(outDir, "llms-full.txt"), pages.map((p) => p.src).join("\n\n---\n\n") + "\n");
   }
   return { pages: pages.length, assets: copied };
 }
 
-// mtime signature of all source files — the reload trigger. Polled by the
-// client; robust even when fs.watch misses an editor's atomic-save.
+// mtime signature of source files - the reload trigger, polled by the client
 function sourceSig(root) {
   let s = 0;
   try { s += statSync(themePath).mtimeMs; } catch {}
@@ -344,19 +322,19 @@ if (argv.includes("--serve")) {
   const server = Bun.serve({
     port: 4321,
     async fetch(req) {
-      const p = new URL(req.url).pathname;
+      const p = decodeURIComponent(new URL(req.url).pathname);
       if (p === "/__v") return new Response(String(sourceSig(root)));
-      const rel = p === "/" || p.endsWith("/") ? p.replace(/^\//, "") + "index.html" : decodeURIComponent(p).replace(/^\//, "");
+      const rel = p === "/" || p.endsWith("/") ? p.replace(/^\//, "") + "index.html" : p.replace(/^\//, "");
       const isHtml = rel.endsWith(".html");
-      if (isHtml) await ensureFresh(); // rebuild on navigation so the page is always current
+      if (isHtml) await ensureFresh();
       const file = Bun.file(join(outDir, rel));
       if (!(await file.exists())) return new Response("not found", { status: 404 });
       if (isHtml) return new Response((await file.text()).replace("</body>", reload + "</body>"), { headers: { "content-type": "text/html" } });
       return new Response(file);
     },
   });
-  console.log(`live preview: ${server.url} — edit any file and the page reloads`);
+  console.log(`live preview: ${server.url} (edit any file, the page reloads)`);
 } else {
-  const { pages, assets } = await build(root);
-  console.log(`✓ ${outDir} — ${pages} page(s), ${assets} asset(s)`);
+  const r = await build(root);
+  console.log(`done: ${outDir} (${r.pages} pages, ${r.assets} assets)`);
 }

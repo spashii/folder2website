@@ -18,8 +18,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
       - run: bun install --frozen-lockfile
-      # the tool builds its own README into the site — self-documenting, one copy
-      - run: bun index.ts . --out site --base-url https://spashii.github.io/docsite
+      # the tool builds its own README into the site, self-documenting, one copy
+      - run: bun index.ts . --out site --base-url https://spashii.github.io/folder2website
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site

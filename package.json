@@ -1,9 +1,9 @@
 {
-  "name": "docsite",
+  "name": "folder2website",
   "version": "0.1.0",
   "type": "module",
   "bin": {
-    "docsite": "index.ts"
+    "folder2website": "index.ts"
   },
   "scripts": {
     "build": "bun run index.ts"
