@@ -33,9 +33,12 @@ bun index.ts /path/to/repo --out site     # or:  bun index.ts . --serve
 Straight from GitHub, no clone (once pushed):
 
 ```sh
-bunx github:spashii/folder2website owner/repo
-bunx github:spashii/folder2website . --serve
+bunx github:spashii/folder2website#main owner/repo
+bunx github:spashii/folder2website#main . --serve
 ```
+
+Use `#main` when running from GitHub so Bun fetches the current branch instead
+of reusing an older cached bare GitHub spec.
 
 ## What you get
 
