@@ -1,11 +1,8 @@
 # folder2website
 
-Point it at a repo, or any folder of markdown (a Notion/Obsidian export, a
-skills dir), and get a clean, self-contained, **markdown-native** static site.
-It starts at `README.md`, follows links to local `.md` files **recursively**
-(each becomes its own page), and copies every referenced asset so nothing 404s.
-No config, no frontmatter; your README stays a normal README. Bun-native, small
-stack (`marked` + plugins, `satori`, `shiki`).
+Build a static site from a repo or markdown folder. Starts at `README.md`,
+follows local markdown links, copies referenced assets, and writes plain files to
+`site/`. No frontmatter. Bun-native.
 
 ```sh
 folder2website <path-or-repo> [--out <dir>] [--token <T>] [--entry f.md ...]
@@ -20,6 +17,9 @@ folder2website . --serve --port 4322       # live preview on a custom port
 folder2website . --serve                  # live preview on :4321, reloads on save
 folder2website -h                         # print usage
 ```
+
+GitHub Pages recipe:
+[`docs/deploy-with-github-pages.md`](docs/deploy-with-github-pages.md).
 
 ## Run it
 
