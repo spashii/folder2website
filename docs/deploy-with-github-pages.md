@@ -94,6 +94,17 @@ Verify:
 dig +short DOMAIN CNAME
 ```
 
+## Best practices
+
+- Deploy with Pages Actions, not a committed `site/` directory.
+- Always pass `--base-url https://DOMAIN` for production builds.
+- Write `site/CNAME` in the workflow. Do not rely on local files being present.
+- Use a `CNAME` for subdomains: `docs.example.com -> OWNER.github.io.`.
+- Keep deploy output outside the source tree during local tests.
+- Check DNS before debugging GitHub Pages.
+- Wait for GitHub's certificate before enforcing HTTPS.
+- Keep the workflow boring: checkout, setup Bun, install, build, upload, deploy.
+
 ## Deploy
 
 Push to `main`, or run:
