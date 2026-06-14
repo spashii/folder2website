@@ -56,13 +56,29 @@ const gitOut = async (args) => { try { return (await $`git ${args}`.nothrow().qu
 const esc = (s) => s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
 const ogTagline = (s) => { const f = s.split(/(?<=[.!?])\s/)[0]; return f.length <= 140 ? f : f.slice(0, 137).replace(/\s+\S*$/, "") + "…"; };
 const isLocal = (h) => h && !/^[a-z][a-z0-9+.-]*:/i.test(h) && !h.startsWith("//") && !h.startsWith("/") && !h.startsWith("#");
-const outName = (rel) => rel.replace(/\.md$/i, ".html").replace(/(^|\/)(readme)\.html$/i, "$1index.html");
+const outName = (rel) => {
+  const i = rel.indexOf("#"), path = i >= 0 ? rel.slice(0, i) : rel, hash = i >= 0 ? rel.slice(i) : "";
+  const html = extname(path)
+    ? path.replace(/\.md$/i, ".html").replace(/(^|\/)(readme)\.html$/i, "$1index.html")
+    : `${path}.html`;
+  return html + hash;
+};
+const isPageLink = (href) => {
+  const path = href.split("#")[0];
+  const ext = extname(path).toLowerCase();
+  return ext === ".md" || (!ext && !path.endsWith("/"));
+};
 const relativeDate = (date) => {
   if (!date) return "";
-  const then = new Date(`${date}T00:00:00Z`);
+  const then = new Date(date.includes("T") ? date : `${date}T00:00:00Z`);
   if (Number.isNaN(then.getTime())) return date;
-  const days = Math.max(0, Math.floor((Date.now() - then.getTime()) / 86400000));
-  if (days < 1) return "less than a day ago";
+  const seconds = Math.max(0, Math.floor((Date.now() - then.getTime()) / 1000));
+  if (seconds < 60) return "less than a minute ago";
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes} minute${minutes === 1 ? "" : "s"} ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} hour${hours === 1 ? "" : "s"} ago`;
+  const days = Math.floor(hours / 24);
   for (const [size, unit] of [[365, "year"], [30, "month"], [7, "week"], [1, "day"]]) {
     const n = Math.floor(days / size);
     if (n >= 1) return `${n} ${unit}${n === 1 ? "" : "s"} ago`;
@@ -125,8 +141,9 @@ const parseCommit = (line) => {
   const [hash, date, name, email] = line.split("\t");
   return hash ? { hash, date, name, email } : null;
 };
-const commitLog = async (root, f, args) => parseCommit(await gitOut(["-C", root, "log", ...args, "--format=%H%x09%cs%x09%an%x09%ae", "--", f]));
-const loginFromEmail = (email = "") => email.match(/^(?:\d+\+)?([^@]+)@users\.noreply\.github\.com$/)?.[1] || "";
+const commitLog = async (root, f, args) => parseCommit(await gitOut(["-C", root, "log", ...args, "--format=%H%x09%cI%x09%an%x09%ae", "--", f]));
+const loginFromEmail = (email = "") => email.match(/^(?:\d+\+)?([^@]+)@users\.noreply\.github\.com$/i)?.[1] || "";
+const loginFromName = (name = "") => /^[a-z0-9](?:[a-z0-9-]{0,37}[a-z0-9])?$/i.test(name) ? name : "";
 const githubAuthorCache = new Map();
 async function githubAuthor(repo, hash) {
   if (!repo || !hash) return "";
@@ -147,7 +164,7 @@ async function githubAuthor(repo, hash) {
 async function commitInfo(root, f, git, args) {
   const c = await commitLog(root, f, args);
   if (!c) return null;
-  c.login = await githubAuthor(git?.repo, c.hash) || loginFromEmail(c.email);
+  c.login = await githubAuthor(git?.repo, c.hash) || loginFromEmail(c.email) || loginFromName(c.name);
   return c;
 }
 
@@ -213,7 +230,7 @@ async function renderMd(src, mdRel, queue, seen, assets) {
     if (!isLocal(href)) return full;
     const t = relAsset(mdRel, href);
     if (!t) return full;
-    if (extname(href.split("#")[0]).toLowerCase() === ".md") {
+    if (isPageLink(href)) {
       if (!seen.has(t)) queue.push(t);
       return a + outName(href) + b;
     }
@@ -247,7 +264,8 @@ function pageHtml({ title, tagline, body, theme, extraCss, depth, og, canonical,
   const copy = `<button class="linkish copy-md" data-md="${esc(twin)}">Copy as Markdown</button>`;
   const sameCommit = updated?.hash && created?.hash && updated.hash === created.hash;
   const lines = [sameCommit ? "" : commitLine("Updated", updated), commitLine("Created", created)].filter(Boolean);
-  const meta = `\n      <footer class="meta"><div class="meta-actions">${[gitLink, copy].filter(Boolean).join(" · ")}</div>${lines.map((line) => `<div class="meta-line">${line}</div>`).join("")}</footer>`;
+  const madeWith = `Made with <a href="https://github.com/spashii/folder2website" data-popover-title="spashii/folder2website" data-popover-description="Point it at a repo or any markdown folder, get a clean website.">spashii/folder2website</a>`;
+  const meta = `\n      <footer class="meta"><div class="meta-actions">${[gitLink, copy].filter(Boolean).join(" · ")}</div>${lines.map((line) => `<div class="meta-line">${line}</div>`).join("")}<div class="meta-line">${madeWith}</div></footer>`;
   const script = `<script>
 for (const b of document.querySelectorAll(".copy-md")) b.onclick = async () => {
   await navigator.clipboard.writeText(await (await fetch(b.dataset.md)).text());
@@ -268,7 +286,7 @@ for (const p of document.querySelectorAll("pre.shiki")) {
   box.append(img, closeButton); document.body.appendChild(box);
   const close = () => { box.hidden = true; document.body.classList.remove("lightbox-open"); img.removeAttribute("src"); };
   const open = (source) => { img.src = source.currentSrc || source.src; img.alt = source.alt || ""; box.hidden = false; document.body.classList.add("lightbox-open"); closeButton.focus(); };
-  for (const source of document.querySelectorAll(".wrap img")) {
+  for (const source of document.querySelectorAll(".wrap img:not(.logo)")) {
     source.tabIndex = 0; source.setAttribute("role", "button"); source.setAttribute("aria-label", "Open image preview");
     source.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); open(source); });
     source.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(source); } });
@@ -285,18 +303,22 @@ for (const p of document.querySelectorAll("pre.shiki")) {
       return c[h] = { t: (d.querySelector("h1")?.textContent || d.title || "").trim(), d: (d.querySelector(".tagline")?.textContent || "").trim() };
     } catch { return c[h] = { t: "", d: "" }; }
   }
-  for (const a of document.querySelectorAll('.wrap a[href$=".html"], .wrap a.home')) {
+  for (const a of document.querySelectorAll('.wrap a[href$=".html"], .wrap a.home, .wrap a[data-popover-title]')) {
     let tm;
     a.addEventListener("mouseenter", () => {
       tm = setTimeout(async () => {
-        const { t, d } = await load(a.href); if (!t) return;
+        const preview = a.dataset.popoverTitle ? { t: a.dataset.popoverTitle, d: a.dataset.popoverDescription || "" } : await load(a.href);
+        const { t, d } = preview; if (!t) return;
         pop?.remove(); pop = document.createElement("div"); pop.className = "popover";
         const s = document.createElement("strong"); s.textContent = t; pop.appendChild(s);
         if (d) { const x = document.createElement("span"); x.textContent = d; pop.appendChild(x); }
         document.body.appendChild(pop);
-        const r = a.getBoundingClientRect();
-        pop.style.left = Math.min(scrollX + r.left, scrollX + innerWidth - pop.offsetWidth - 12) + "px";
-        pop.style.top = (scrollY + r.bottom + 8) + "px";
+        const r = a.getBoundingClientRect(), gap = 8, pad = 12;
+        const left = Math.max(pad, Math.min(r.left, innerWidth - pop.offsetWidth - pad));
+        let top = r.bottom + gap;
+        if (top + pop.offsetHeight > innerHeight - pad) top = r.top - pop.offsetHeight - gap;
+        pop.style.left = left + "px";
+        pop.style.top = Math.max(pad, top) + "px";
       }, 180);
     });
     a.addEventListener("mouseleave", () => { clearTimeout(tm); pop?.remove(); pop = null; });
