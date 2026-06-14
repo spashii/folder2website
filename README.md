@@ -15,6 +15,7 @@ folder2website .                          # current repo -> ./site
 folder2website owner/repo --token $GH_PAT # clone a (private) GitHub repo
 folder2website . --base-url https://x.com # + sitemap, robots, llms.txt, per-page OG
 folder2website . --serve                  # live preview on :4321, reloads on save
+folder2website -h                         # print usage
 ```
 
 ## Run it

@@ -21,11 +21,16 @@ import { tmpdir } from "node:os";
 import { makeOgPng } from "./og.ts";
 
 const argv = process.argv.slice(2);
+const usage = "usage: folder2website <path-or-repo> [--out <dir>] [--token <T>] [--entry f.md ...] [--base-url <url>] [--serve]";
+if (argv.includes("-h") || argv.includes("--help")) {
+  console.log(usage);
+  process.exit(0);
+}
 const flag = (n) => { const i = argv.indexOf(n); return i >= 0 ? argv[i + 1] : undefined; };
 const flags = new Set(["--out", "--token", "--entry", "--base-url"]);
-const target = argv.filter((a, i) => !a.startsWith("--") && !flags.has(argv[i - 1]))[0];
+const target = argv.filter((a, i) => !a.startsWith("-") && !flags.has(argv[i - 1]))[0];
 if (!target) {
-  console.error("usage: folder2website <path-or-repo> [--out <dir>] [--token <T>] [--entry f.md ...] [--base-url <url>] [--serve]");
+  console.error(usage);
   process.exit(1);
 }
 const token = flag("--token") ?? process.env.GITHUB_TOKEN;
