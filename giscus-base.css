@@ -1,0 +1,19 @@
+/*! folder2website - base giscus theme (structural overrides).
+    Served from raw.githubusercontent.com and @imported by each site's generated
+    giscus-theme.css. Brand COLOURS come from the importing sheet (these rules only
+    reference CSS variables); this file is layout/structure only, so the fixes here
+    (e.g. left-aligned reactions) are maintained in one place for every site. */
+
+main .gsc-header,
+main .gsc-comment-box-tabs { border-color: var(--color-border-muted); }
+main .pagination-loader-container { background: none; }
+
+/* left-align the page reaction summary (giscus centres it by default) */
+main .gsc-reactions { align-items: flex-start !important; justify-content: flex-start !important; text-align: left !important; }
+main .gsc-reactions > *,
+main .gsc-reactions-count,
+main .gsc-reactions-menu,
+main .gsc-direct-reaction-buttons {
+  align-self: flex-start !important; justify-content: flex-start !important; text-align: left !important;
+  margin-left: 0 !important; margin-right: 0 !important;
+}

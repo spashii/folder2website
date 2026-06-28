@@ -86,13 +86,21 @@ colours and written to `giscus-theme.css`.
 ```
 
 Get `repoId` / `categoryId` from the [giscus setup page](https://giscus.app).
-Optional `themeUrl` overrides the generated theme with an absolute URL.
 
-Note: giscus fetches the theme CSS cross-origin from `giscus.app`, so the host
-must send `Access-Control-Allow-Origin` (the built-in `--serve` does). A
-secure giscus iframe also cannot read a theme from `http://localhost` (browser
-local-network policy) - the theme applies once the site is served over HTTPS, or
-set `themeUrl` to a public HTTPS file (e.g. raw.githubusercontent.com).
+When comments are enabled and the manifest carries theme colours, folder2website
+writes a `giscus-theme.css` that `@import`s a shared base theme - structural
+overrides like the left-aligned reactions, kept in the folder2website repo and
+served over raw.githubusercontent - and layers your brand colours on top, so the
+structural fixes are maintained in one place for every site. Overrides:
+
+- `themeUrl` - absolute URL that replaces the generated theme entirely.
+- `themeBaseUrl` - absolute URL of the base theme to `@import` (defaults to the
+  one in the folder2website repo).
+
+Note: giscus fetches the theme CSS cross-origin, so the host must send
+`Access-Control-Allow-Origin` (the built-in `--serve` does). A secure giscus
+iframe also cannot read a theme from `http://localhost` (browser local-network
+policy) - the theme applies once the site is served over HTTPS.
 
 ## example
 

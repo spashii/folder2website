@@ -101,6 +101,12 @@ function docHeadingsAnchored(src) {
 // a giscus theme CSS auto-derived from the manifest's brand colours (light + dark via color-mix)
 function giscusTheme(manifest) {
   const ext = manifest.readme_site || {}, d = ext.dark || {};
+  const comments = ext.comments || {};
+  // structural overrides (left-aligned reactions, borders, …) live in one shared base file
+  // in the folder2website repo, fetched over raw.githubusercontent (HTTPS + CORS). This
+  // generated sheet only @imports it and layers the brand colours on top.
+  const baseUrl = comments.themeBaseUrl || "https://raw.githubusercontent.com/spashii/folder2website/main/giscus-base.css";
+  const font = ext.font ? '"' + String(ext.font).replace(/"/g, "") + '",' : "";
   const L = { bg: manifest.background_color || "#ffffff", fg: ext.fg || "#1f2328", acc: manifest.theme_color || "#0969da" };
   const D = { bg: d.bg || "#0d1117", fg: d.fg || "#e6edf3", acc: d.accent || L.acc };
   const mix = (a, p, b) => `color-mix(in srgb, ${a} ${p}%, ${b})`;
@@ -113,14 +119,11 @@ function giscusTheme(manifest) {
   --color-btn-text:${c.fg};--color-btn-bg:${c.bg};--color-btn-border:${mix(c.fg, 20, "transparent")};--color-btn-hover-bg:${mix(c.bg, 92, c.fg)};--color-btn-hover-border:${mix(c.fg, 30, "transparent")};--color-btn-active-bg:${mix(c.bg, 88, c.fg)};
   --color-btn-primary-text:#fff;--color-btn-primary-bg:${c.acc};--color-btn-primary-border:${mix(c.fg, 12, "transparent")};--color-btn-primary-hover-bg:${primHover};--color-btn-primary-hover-border:transparent;--color-btn-primary-selected-bg:${c.acc};
   --color-social-reaction-bg-hover:${mix(c.acc, 14, "transparent")};--color-social-reaction-bg-reacted-hover:${mix(c.acc, 22, "transparent")};`;
-  return `/*! dembrane giscus theme - auto-generated from manifest.json */
+  return `@import url("${baseUrl}");
+/*! giscus theme - colours auto-derived from manifest.json; structure from the folder2website base */
 main{${block(L, L.fg)}
-  font-family:"Lexend",-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;}
-@media (prefers-color-scheme: dark){main{${block(D, D.acc)}}}
-main .gsc-header,main .gsc-comment-box-tabs{border-color:var(--color-border-muted)}
-main .pagination-loader-container{background:none}
-main .gsc-reactions{align-items:flex-start!important;justify-content:flex-start!important;text-align:left!important}
-main .gsc-reactions>*,main .gsc-reactions-count,main .gsc-reactions-menu,main .gsc-direct-reaction-buttons{align-self:flex-start!important;justify-content:flex-start!important;text-align:left!important;margin-left:0!important;margin-right:0!important}`;
+  font-family:${font}-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;}
+@media (prefers-color-scheme: dark){main{${block(D, D.acc)}}}`;
 }
 const isLocal = (h) => h && !/^[a-z][a-z0-9+.-]*:/i.test(h) && !h.startsWith("//") && !h.startsWith("/") && !h.startsWith("#");
 const outName = (rel) => {
@@ -1012,16 +1015,21 @@ async function build(root, { serve = false } = {}) {
   const commentsCfg = ext.comments && ext.comments.repo ? ext.comments : null;
   let commentsOut = null;
   if (commentsCfg) {
-    const giscusCss = giscusTheme(manifest);
-    await write(join(outDir, "giscus-theme.css"), giscusCss);
-    // theme URL: an absolute `comments.themeUrl` in the manifest wins - point it at a
-    // public HTTPS + CORS file (e.g. raw.githubusercontent.com) that giscus can always
-    // reach, including from localhost. Otherwise serve it from this site, cache-busted by
-    // content hash. giscus fetches the CSS cross-origin, so the host must send CORS.
-    let h = 5381; for (let i = 0; i < giscusCss.length; i++) h = ((h * 33) ^ giscusCss.charCodeAt(i)) >>> 0;
-    const themeUrl = /^https?:\/\//.test(commentsCfg.themeUrl || "")
-      ? commentsCfg.themeUrl
-      : (base ? base + "/giscus-theme.css?v=" + h.toString(36) : "preferred_color_scheme");
+    // an absolute `comments.themeUrl` wins (point it at any public HTTPS + CORS file).
+    const override = /^https?:\/\//.test(commentsCfg.themeUrl || "") ? commentsCfg.themeUrl : null;
+    // only build the brand theme when the manifest actually carries theme colours; otherwise
+    // let giscus use its own. The generated sheet @imports the shared base from the repo and
+    // adds the palette - giscus fetches it cross-origin, so the host must send CORS (the dev
+    // server does). Cache-bust on content so a changed theme is re-fetched.
+    const hasTheme = !!(manifest && (manifest.theme_color || manifest.background_color || ext.fg || ext.dark));
+    let themeUrl = "preferred_color_scheme";
+    if (override) themeUrl = override;
+    else if (base && hasTheme) {
+      const giscusCss = giscusTheme(manifest);
+      await write(join(outDir, "giscus-theme.css"), giscusCss);
+      let h = 5381; for (let i = 0; i < giscusCss.length; i++) h = ((h * 33) ^ giscusCss.charCodeAt(i)) >>> 0;
+      themeUrl = base + "/giscus-theme.css?v=" + h.toString(36);
+    }
     commentsOut = { ...commentsCfg, themeUrl };
   }
 
