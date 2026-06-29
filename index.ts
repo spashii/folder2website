@@ -378,8 +378,10 @@ function pageHtml({ title, tagline, body, theme, extraCss, depth, og, canonical,
   const searchToggle = `<button type="button" class="ds-toggle search-open" aria-label="Search" title="Search"><svg width="17" height="17" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="7" cy="7" r="4.6"/><line x1="10.6" y1="10.6" x2="14.5" y2="14.5" stroke-linecap="round"/></svg></button>`;
   const topRight = `<div class="topbar">${searchToggle}${langSwitch || ""}</div>`;
   const searchPanel = `<div class="docsearch" hidden role="search">
-        <span class="ds-ic" aria-hidden="true"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="7" cy="7" r="4.6"/><line x1="10.6" y1="10.6" x2="14.5" y2="14.5" stroke-linecap="round"/></svg></span>
-        <input type="search" class="ds-input" placeholder="Search the docs…" aria-label="Search the docs" autocomplete="off" spellcheck="false" />
+        <div class="ds-field">
+          <span class="ds-ic" aria-hidden="true"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="7" cy="7" r="4.6"/><line x1="10.6" y1="10.6" x2="14.5" y2="14.5" stroke-linecap="round"/></svg></span>
+          <input type="search" class="ds-input" placeholder="Search the docs…" aria-label="Search the docs" autocomplete="off" spellcheck="false" />
+        </div>
         <div class="ds-results" hidden></div>
       </div>`;
   const commentsHtml = comments ? `\n      <section class="comments" aria-label="Comments">
