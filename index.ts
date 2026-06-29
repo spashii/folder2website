@@ -16,7 +16,7 @@ import markedFootnote from "marked-footnote";
 import { markedSmartypants } from "marked-smartypants";
 import { codeToHtml } from "shiki";
 import { existsSync, mkdirSync, readdirSync, statSync } from "node:fs";
-import { dirname, join, resolve, posix, extname } from "node:path";
+import { dirname, join, resolve, relative, posix, extname } from "node:path";
 import { tmpdir } from "node:os";
 import { makeOgPng } from "./og.ts";
 
@@ -1083,14 +1083,21 @@ async function build(root, { serve = false } = {}) {
   return { pages: pages.length, assets: copied };
 }
 
-// mtime signature of source files - the reload trigger, polled by the client
+// mtime signature of source files - the reload trigger, polled by the client.
+// Never includes the output dir: it is rewritten on every build, so watching it
+// (when it sits inside the source root, e.g. docs/_site) would reload endlessly.
 function sourceSig(root) {
   let s = 0;
+  const r = relative(root, outDir).replace(/\\/g, "/");
+  const inOut = r && r !== ".." && !r.startsWith("../") && !r.startsWith("/") ? r : null;
   try { s += statSync(themePath).mtimeMs; } catch {}
   try { if (manifestArg) s += statSync(resolve(root, manifestArg)).mtimeMs; } catch {}
   try {
     for (const f of readdirSync(root, { recursive: true })) {
-      if (typeof f === "string" && /\.(md|json|css|png|jpe?g|svg)$/i.test(f) && !/(^|[\\/])(node_modules|\.git|site)([\\/]|$)/.test(f)) {
+      if (typeof f !== "string") continue;
+      const nf = f.replace(/\\/g, "/");
+      if (inOut && (nf === inOut || nf.startsWith(inOut + "/"))) continue;
+      if (/\.(md|json|css|png|jpe?g|svg)$/i.test(f) && !/(^|[\\/])(node_modules|\.git)([\\/]|$)/.test(f)) {
         try { s += statSync(join(root, f)).mtimeMs; } catch {}
       }
     }
@@ -1101,12 +1108,16 @@ function sourceSig(root) {
 const root = await resolveRoot();
 
 if (argv.includes("--serve")) {
-  let building = false;
+  let building = false, builtSig = null;
+  // rebuild only when the source signature actually changes - not on every request
   const ensureFresh = async () => {
     if (building) return;
+    const sig = sourceSig(root);
+    if (sig === builtSig) return;
     building = true;
-    try { await build(root, { serve: true }); } catch (e) { console.warn(`build: ${e.message}`); }
-    building = false;
+    try { await build(root, { serve: true }); builtSig = sig; }
+    catch (e) { console.warn(`build: ${e.message}`); }
+    finally { building = false; }
   };
   await ensureFresh();
   const reload = `<script>let v=null;setInterval(async()=>{const n=await(await fetch("/__v")).text();if(v===null)v=n;else if(n!==v)location.reload()},400)</script>`;
