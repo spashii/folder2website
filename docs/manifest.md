@@ -39,10 +39,68 @@ ignore it.
 | `baseUrl` | fallback for the `--base-url` CLI flag when it's omitted (the flag wins if both are set) |
 | `css` | path (relative to repo root) to an extra CSS file appended verbatim after the generated vars |
 | `dark` | `{ bg, fg, muted, line, accent }`, emitted inside `@media (prefers-color-scheme: dark)`; `dark.bg` also drives the dark `<meta name="theme-color">` |
+| `logo_dark` | alternate logo shown in dark mode (the `icons[]` logo is used in light mode) |
+| `i18n` | translations: `{ defaultLocale, locales: [{ code, label }] }`. See [i18n](#i18n-translations) |
+| `comments` | giscus comments per page (opt-in). See [comments](#comments-giscus) |
 
 Only `background_color` and `theme_color` are read from the standard keys for
 color; every other palette color (`fg`, `muted`, `line`, and the whole `dark`
 block) lives under `readme_site`.
+
+## i18n (translations)
+
+`page.md` is the default locale; `page.<code>.md` next to it is a translation
+(e.g. `guide.md` and `guide.nl-NL.md`). folder2website pairs them automatically,
+renders a small language switcher in the top-right, and emits `<link rel="alternate" hreflang>` between the twins.
+
+```json
+"i18n": {
+  "defaultLocale": "en-UK",
+  "locales": [
+    { "code": "en-UK", "label": "EN" },
+    { "code": "nl-NL", "label": "NL" }
+  ]
+}
+```
+
+`code` is used for the file suffix and the `hreflang`; `label` is the switcher
+button text. Pages with no twin simply show one language.
+
+## comments (giscus)
+
+Opt in to [giscus](https://giscus.app) comments at the foot of every page. A
+brand-matched giscus theme (light + dark) is generated from your manifest
+colours and written to `giscus-theme.css`.
+
+```json
+"comments": {
+  "repo": "owner/repo",
+  "repoId": "R_...",
+  "category": "General",
+  "categoryId": "DIC_...",
+  "mapping": "pathname",
+  "reactions": true,
+  "inputPosition": "top",
+  "lang": "en"
+}
+```
+
+Get `repoId` / `categoryId` from the [giscus setup page](https://giscus.app).
+
+When comments are enabled and the manifest carries theme colours, folder2website
+writes a `giscus-theme.css` that `@import`s a shared base theme - structural
+overrides like the left-aligned reactions, kept in the folder2website repo and
+served over raw.githubusercontent - and layers your brand colours on top, so the
+structural fixes are maintained in one place for every site. Overrides:
+
+- `themeUrl` - absolute URL that replaces the generated theme entirely.
+- `themeBaseUrl` - absolute URL of the base theme to `@import` (defaults to the
+  one in the folder2website repo).
+
+Note: giscus fetches the theme CSS cross-origin, so the host must send
+`Access-Control-Allow-Origin` (the built-in `--serve` does). A secure giscus
+iframe also cannot read a theme from `http://localhost` (browser local-network
+policy) - the theme applies once the site is served over HTTPS.
 
 ## example
 
