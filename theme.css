@@ -197,10 +197,10 @@ pre.shiki:hover .copy-code, .copy-code:focus { opacity: 1; }
 
 /* --- top-right cluster: search icon + language switcher --- */
 .topbar { position: fixed; top: 14px; right: 14px; z-index: 40; display: flex; align-items: center; gap: 8px; }
-.ds-toggle { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 30px; padding: 0;
-  color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 999px; cursor: pointer;
-  box-shadow: 0 1px 2px hsla(120, 2%, 16%, .08); }
-.ds-toggle:hover { border-color: var(--accent); color: var(--accent); }
+.ds-toggle { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; padding: 0;
+  color: var(--fg); background: none; border: 0; cursor: pointer; }
+.ds-toggle:hover, .ds-toggle:focus-visible { color: var(--accent); }
+.ds-toggle:focus, .ds-toggle:focus-visible { outline: none; }
 /* --- i18n language switcher (folder2website i18n enhancement) --- */
 .langswitch {
   display: inline-flex; gap: 2px; padding: 3px;
@@ -296,7 +296,8 @@ body.graph-open-body { overflow: hidden; }
 /* site search: a popover panel from the top-right search icon, results drop in below */
 .docsearch { position: fixed; top: 52px; right: 14px; z-index: 45; width: min(440px, calc(100vw - 28px)); }
 .docsearch[hidden] { display: none; }
-.docsearch .ds-ic { position: absolute; left: 12px; top: 18px; transform: translateY(-50%);
+.ds-field { position: relative; }
+.ds-field .ds-ic { position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
   color: color-mix(in srgb, var(--fg) 52%, var(--bg)); display: inline-flex; pointer-events: none; }
 .ds-input { width: 100%; box-sizing: border-box; padding: 8px 12px 8px 34px; font: inherit; font-size: 15px;
   color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 10px; outline: none; }
