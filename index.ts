@@ -840,7 +840,7 @@ ${css}
     <script src="${prefix}d3-force.js"></script>
     <script src="${prefix}minisearch.min.js"></script>
     ${hasMermaid ? `<script src="${prefix}mermaid.min.js"></script>
-    <script>mermaid.initialize({ startOnLoad: false, theme: matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "neutral", fontFamily: "Lexend, system-ui, sans-serif" });
+    <script>mermaid.initialize({ startOnLoad: false, theme: matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "neutral" });
     document.fonts.ready.then(() => mermaid.run());</script>
     ` : ""}${script}
   </body>
