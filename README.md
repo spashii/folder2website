@@ -46,6 +46,7 @@ GITHUB_TOKEN=github_pat_... bunx github:spashii/folder2website#main owner/repo
 ## Rendering
 
 - Shiki syntax highlighting.
+- Mermaid diagrams (```mermaid fences render client-side; the library ships only when a page uses one).
 - GitHub alerts.
 - Footnotes.
 - Heading anchors.

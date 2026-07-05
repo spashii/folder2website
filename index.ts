@@ -166,6 +166,10 @@ marked.use(markedFootnote());
 const SHIKI = { themes: { light: "vitesse-light", dark: "vitesse-dark" }, defaultColor: "light" };
 marked.use(markedShiki({
   highlight: async (code, lang) => {
+    // ```mermaid fences skip Shiki and render client-side: emit the bare
+    // <pre class="mermaid"> shape mermaid.js looks for. The script is only
+    // included on pages that produced one (see hasMermaid in renderMd).
+    if (lang === "mermaid") return `<pre class="mermaid">${esc(code)}</pre>`;
     for (const l of [lang, "text"]) {
       try {
         const out = await codeToHtml(code, { lang: l || "text", ...SHIKI });
@@ -327,7 +331,7 @@ async function renderMd(src, mdRel, queue, seen, assets) {
     assets.add(t);
     return full;
   });
-  return { title, tagline, body, src, outLinks };
+  return { title, tagline, body, src, outLinks, hasMermaid: body.includes('<pre class="mermaid">') };
 }
 
 function authorHtml(commit) {
@@ -337,7 +341,7 @@ function authorHtml(commit) {
 }
 const commitLine = (label, commit) => commit ? `${label} ${relativeDate(commit.date)} by ${authorHtml(commit)}` : "";
 
-function pageHtml({ title, tagline, body, theme, extraCss, depth, og, canonical, isIndex, siteTitle, logo, logoDark, editUrl, updated, created, twin, themeColor, themeColorDark, hasManifest, lang, langSwitch, hreflang, nav, isHome, graphJson, outRel, comments }) {
+function pageHtml({ title, tagline, body, theme, extraCss, depth, og, canonical, isIndex, siteTitle, logo, logoDark, editUrl, updated, created, twin, themeColor, themeColorDark, hasManifest, lang, langSwitch, hreflang, nav, isHome, graphJson, outRel, comments, hasMermaid }) {
   const prefix = "../".repeat(depth);
   const css = theme.replace(/url\("fonts\//g, `url("${prefix}fonts/`) + (extraCss || "");
   const favicon = logo;
@@ -835,7 +839,9 @@ ${css}
     ${graphModal}
     <script src="${prefix}d3-force.js"></script>
     <script src="${prefix}minisearch.min.js"></script>
-    ${script}
+    ${hasMermaid ? `<script src="${prefix}mermaid.min.js"></script>
+    <script>mermaid.initialize({ startOnLoad: true, theme: matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "neutral", fontFamily: "Lexend, system-ui, sans-serif" });</script>
+    ` : ""}${script}
   </body>
 </html>
 `;
@@ -1053,6 +1059,10 @@ async function build(root, { serve = false } = {}) {
   // vendored d3-force engine (loaded via <script src> so it works from file:// too)
   await copy(join(here, "vendor", "d3-force.bundle.js"), join(outDir, "d3-force.js"));
   await copy(join(here, "vendor", "minisearch.min.js"), join(outDir, "minisearch.min.js"));
+  // mermaid is heavy (~3.5MB), so it ships only when a page actually has a
+  // ```mermaid fence - and each page only loads it when it needs it.
+  if (pages.some((p) => p.hasMermaid))
+    await copy(join(here, "vendor", "mermaid.min.js"), join(outDir, "mermaid.min.js"));
 
   const ogPages = pages.filter((p) => p.makeOg);
   if (ogPages.length) {
