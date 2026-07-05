@@ -175,6 +175,8 @@ h2:hover .anchor, h3:hover .anchor, .anchor:focus { opacity: 1; }
   }
 /* copy-code button on Shiki blocks */
 pre.shiki { position: relative; }
+pre.mermaid { display: flex; justify-content: center; background: transparent; border: 0; padding: 0; }
+pre.mermaid:not([data-processed]) { visibility: hidden; min-height: 2rem; }
 .copy-code, .lightbox button { padding: 6px 10px; border: 1px solid var(--line); border-radius: 999px;
   background: var(--bg); color: var(--fg); font: 17px/1.4 var(--font), -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; cursor: pointer; }
 .copy-code { position: absolute; top: 8px; right: 8px; opacity: 0; }

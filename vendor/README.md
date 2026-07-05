@@ -8,8 +8,12 @@ scripts from a third-party origin, and so the graph/search work from `file://`.
 | --- | --- | --- | --- |
 | `d3-force.bundle.js` | [d3-force](https://github.com/d3/d3-force) (+ d3-dispatch, d3-quadtree, d3-timer) | v3 | ISC |
 | `minisearch.min.js` | [MiniSearch](https://github.com/lucaong/minisearch) | v7 | MIT |
+| `mermaid.min.js` | [Mermaid](https://github.com/mermaid-js/mermaid) | v11.16.0 | MIT |
 
 `d3-force.bundle.js` concatenates the d3 UMD builds it depends on; together they
 expose `window.d3` (`forceSimulation`, `forceManyBody`, `forceLink`, …). MiniSearch
-exposes `window.MiniSearch`. To update, replace a file with its upstream build of
-the same global; no code changes are needed.
+exposes `window.MiniSearch`. Mermaid exposes `window.mermaid` and is the one
+conditional vendor file: it's large, so it's copied into the built site only when
+some page contains a ```mermaid fence, and loaded only by pages that do. To update,
+replace a file with its upstream build of the same global; no code changes are
+needed.
