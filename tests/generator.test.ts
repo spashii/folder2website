@@ -24,6 +24,10 @@ Continue with the [related guide](guide.md).
 | Field | Meaning |
 | --- | --- |
 | Owner | Person responsible |
+
+## Related guides
+
+- [Related guide](guide.md)
 `);
   await Bun.write(join(fixture, "guide.md"), `# Related guide
 
@@ -88,6 +92,8 @@ test("keeps related pages textual and graph navigation consistent", async () => 
   const html = await Bun.file(join(regularOut, "index.html")).text();
   expect(html).toContain('<div class="related-grid">');
   expect(html).toContain('<a href="guide.html">Related guide</a>');
+  expect(html.match(/<h2>Related pages<\/h2>/g)).toHaveLength(1);
+  expect(html).not.toContain("Related guides");
   expect(html).not.toContain("localmap-canvas");
   expect(html).toContain('<button type="button" class="graph-back">← Back</button>');
   expect(html).toContain('class="graph-overview" aria-label="Show whole graph"');

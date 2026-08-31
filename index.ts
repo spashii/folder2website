@@ -321,6 +321,13 @@ function markStandaloneActionLinks(body) {
   });
 }
 
+// A final related-links list is useful source metadata, but rendering it beside the
+// generated related-page list repeats the same navigation. Keep its links in the
+// graph, then let the generator present the relationship once.
+function stripTrailingRelatedLinks(body) {
+  return body.replace(/\s*<h([23])>\s*Related (?:guides|pages)\s*<\/h\1>\s*<(?:ul|ol)>[\s\S]*?<\/(?:ul|ol)>\s*$/i, "");
+}
+
 async function renderMd(src, mdRel, queue, seen, assets) {
   src = src.trim();
   // folder2website is frontmatter-less by design; our docs use YAML frontmatter, so strip
@@ -348,7 +355,6 @@ async function renderMd(src, mdRel, queue, seen, assets) {
     `<div class="${(imgs.match(/<img/g) || []).length > 3 ? "shots" : "imgrow"}">${imgs}</div>`);
   body = markStandaloneActionLinks(body);
   body = body.replace(/<p((?![^>]*\bactions\b)[^>]*)>/, (_m, attrs) => `<p${addHtmlClass(attrs, "tagline")}>`);
-  ({ body } = enrichHeadings(body));
 
   for (const m of body.matchAll(/<img[^>]*\bsrc="([^"]+)"/g))
     if (isLocal(m[1])) { const a = relAsset(mdRel, m[1]); if (a) assets.add(a); }
@@ -365,6 +371,8 @@ async function renderMd(src, mdRel, queue, seen, assets) {
     assets.add(t);
     return full;
   });
+  body = stripTrailingRelatedLinks(body);
+  ({ body } = enrichHeadings(body));
   return { title, tagline, body, src, outLinks, hasMermaid: body.includes('<pre class="mermaid">') };
 }
 

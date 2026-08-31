@@ -85,7 +85,8 @@ GITHUB_TOKEN=github_pat_... bunx github:spashii/folder2website#main owner/repo
   section. Selecting a page shows one hop. Backlinks are hidden by default.
   Graph colors use the roles in the manifest theme.
 - A grouped "Related pages" list on each page. It can open the graph focused
-  on the current page.
+  on the current page. A trailing Markdown section named "Related guides" or
+  "Related pages" supplies links to this list without rendering a duplicate.
 - Optional language switcher. See [`docs/manifest.md`](docs/manifest.md).
 - Optional giscus comments. See [`docs/manifest.md`](docs/manifest.md).
 
