@@ -5,7 +5,8 @@
 //
 //   folder2website <path-or-repo> [--out <dir>] [--token <T>] [--entry f.md ...]
 //                                 [--base-url https://...] [--manifest <path>] [--clone-dir <dir>]
-//                                 [--hide-generator-attribution] [--port 4321] [--serve]
+//                                 [--hide-generator-attribution] [--hide-footer-actions]
+//                                 [--port 4321] [--serve]
 //
 // ponytail: a small script, not a framework. Want search/sidebar/versioning?
 // reach for VitePress instead of growing this.
@@ -22,7 +23,7 @@ import { tmpdir } from "node:os";
 import { makeOgPng } from "./og.ts";
 
 const argv = process.argv.slice(2);
-const usage = "usage: folder2website <path-or-repo> [--out <dir>] [--token <T>] [--entry f.md ...] [--base-url <url>] [--manifest <path>] [--clone-dir <dir>] [--hide-generator-attribution] [--port <n>] [--serve]";
+const usage = "usage: folder2website <path-or-repo> [--out <dir>] [--token <T>] [--entry f.md ...] [--base-url <url>] [--manifest <path>] [--clone-dir <dir>] [--hide-generator-attribution] [--hide-footer-actions] [--port <n>] [--serve]";
 if (argv.includes("-h") || argv.includes("--help")) {
   console.log(usage);
   process.exit(0);
@@ -40,6 +41,7 @@ const baseUrl = flag("--base-url")?.replace(/\/$/, "");
 const manifestArg = flag("--manifest");
 const clonePath = flag("--clone-dir") ? resolve(flag("--clone-dir")) : null;
 const showGeneratorAttribution = !argv.includes("--hide-generator-attribution");
+const showFooterActions = !argv.includes("--hide-footer-actions");
 const port = Number(flag("--port") ?? 4321);
 if (!Number.isInteger(port) || port < 1 || port > 65535) {
   console.error("--port must be an integer from 1 to 65535");
@@ -293,6 +295,20 @@ function enrichHeadings(body) {
   return { body: tocHtml && body.includes("</h1>") ? body.replace("</h1>", "</h1>\n" + tocHtml) : tocHtml + body };
 }
 
+const standaloneMarkdownHref = (block) => block.match(/^\[[^\]]+\]\(([^\s)]+)(?:\s+["'][^"']*["'])?\)$/s)?.[1] || "";
+const addHtmlClass = (attrs, names) => {
+  const m = attrs.match(/\bclass="([^"]*)"/);
+  return m
+    ? attrs.replace(m[0], `class="${m[1]} ${names}"`)
+    : `${attrs} class="${names}"`;
+};
+function markStandaloneActionLinks(body) {
+  return body.replace(/<p([^>]*)>\s*<a([^>]*\bhref="([^"]+)"[^>]*)>([\s\S]*?)<\/a>\s*<\/p>/g, (full, pAttrs, aAttrs, href, label) => {
+    if (!href || /<(?:img|picture|svg)\b/i.test(label)) return full;
+    return `<p${addHtmlClass(pAttrs, "actions")}><a${addHtmlClass(aAttrs, "btn action-link")}>${label}</a></p>`;
+  });
+}
+
 async function renderMd(src, mdRel, queue, seen, assets) {
   src = src.trim();
   // folder2website is frontmatter-less by design; our docs use YAML frontmatter, so strip
@@ -308,14 +324,18 @@ async function renderMd(src, mdRel, queue, seen, assets) {
   }
   const title = fm.title || src.match(/^#\s+(.+)$/m)?.[1].trim() || posix.basename(mdRel);
   const tagline = fm.description || src.split(/\n\s*\n/).map((b) => b.trim())
-    .find((b) => b && !b.startsWith("#") && !b.startsWith("!["))?.replace(/\s+/g, " ") || "";
+    .find((b) => {
+      if (!b || b.startsWith("#") || b.startsWith("![")) return false;
+      return !standaloneMarkdownHref(b);
+    })?.replace(/\s+/g, " ") || "";
 
   let body = await marked.parse(src);
   // ponytail: regexes over marked's own output (controlled input)
-  body = body.replaceAll("<table>", '<div class="table-wrap"><table>').replaceAll("</table>", "</table></div>");
+  body = body.replaceAll("<table>", '<div class="table-wrap" tabindex="0"><table>').replaceAll("</table>", "</table></div>");
   body = body.replace(/<p>((?:\s*<img[^>]*>\s*)+)<\/p>/g, (_m, imgs) =>
     `<div class="${(imgs.match(/<img/g) || []).length > 3 ? "shots" : "imgrow"}">${imgs}</div>`);
-  body = body.replace("<p>", '<p class="tagline">');
+  body = markStandaloneActionLinks(body);
+  body = body.replace(/<p((?![^>]*\bactions\b)[^>]*)>/, (_m, attrs) => `<p${addHtmlClass(attrs, "tagline")}>`);
   ({ body } = enrichHeadings(body));
 
   for (const m of body.matchAll(/<img[^>]*\bsrc="([^"]+)"/g))
@@ -343,7 +363,7 @@ function authorHtml(commit) {
 }
 const commitLine = (label, commit) => commit ? `${label} ${relativeDate(commit.date)} by ${authorHtml(commit)}` : "";
 
-function pageHtml({ title, tagline, body, theme, extraCss, depth, og, canonical, isIndex, siteTitle, logo, logoDark, editUrl, updated, created, twin, themeColor, themeColorDark, hasManifest, lang, langSwitch, hreflang, nav, isHome, graphJson, outRel, comments, hasMermaid, showGeneratorAttribution }) {
+function pageHtml({ title, tagline, body, theme, extraCss, depth, og, canonical, isIndex, siteTitle, logo, logoDark, editUrl, updated, created, twin, themeColor, themeColorDark, hasManifest, lang, langSwitch, hreflang, nav, isHome, graphJson, outRel, comments, hasMermaid, showGeneratorAttribution, showFooterActions }) {
   const prefix = "../".repeat(depth);
   const css = theme.replace(/url\("fonts\//g, `url("${prefix}fonts/`) + (extraCss || "");
   const favicon = logo;
@@ -371,7 +391,9 @@ function pageHtml({ title, tagline, body, theme, extraCss, depth, og, canonical,
     ? `<div class="meta-line">Website made with <a href="https://github.com/spashii/folder2website" data-popover-title="spashii/folder2website" data-popover-description="Point it at a repo or any markdown folder, get a clean website.">spashii/folder2website</a></div>`
     : "";
   // Search and the knowledge graph live in the top-right controls, not the footer.
-  const meta = `\n      <footer class="meta"><div class="meta-actions">${[gitLink, copy].filter(Boolean).join(" · ")}</div>${lines.map((line) => `<div class="meta-line">${line}</div>`).join("")}${madeWith}</footer>`;
+  const actions = showFooterActions ? `<div class="meta-actions">${[gitLink, copy].filter(Boolean).join(" · ")}</div>` : "";
+  const metaBody = actions + lines.map((line) => `<div class="meta-line">${line}</div>`).join("") + madeWith;
+  const meta = metaBody ? `\n      <footer class="meta">${metaBody}</footer>` : "";
   const graphModal = `<div class="graph-modal" hidden aria-hidden="true" role="dialog" aria-label="Knowledge graph">
       <div class="graph-bar">
         <div class="graph-bar-left"><button type="button" class="graph-reset" hidden>← Whole graph</button><span class="graph-title">Knowledge graph</span></div>
@@ -489,9 +511,9 @@ for (const p of document.querySelectorAll("pre.shiki")) {
   function hrefToId(href) { try { const abs = new URL(href, location.href).href.split("#")[0].split("?")[0]; if (!rootUrl || !abs.startsWith(rootUrl)) return null; let id = abs.slice(rootUrl.length); if (id === "" || id.endsWith("/")) id += "index.html"; return decodeURIComponent(id); } catch (e) { return null; } }
   window.__docMeta = (href) => { const n = byId.get(hrefToId(href)); return n ? { t: n.t, d: n.d } : null; };
   // persisted graph settings (backlinks, legend visibility) via localStorage
-  const SKEY = "dembrane-graph-settings";
+  const SKEY = "folder2website-graph-settings";
   const _saved = (() => { try { return JSON.parse(localStorage.getItem(SKEY)) || {}; } catch (e) { return {}; } })();
-  showBacklinks = _saved.backlinks !== false;
+  showBacklinks = _saved.backlinks === true;
   let legendVisible = _saved.legend !== false;
   const saveSettings = () => { try { localStorage.setItem(SKEY, JSON.stringify({ backlinks: showBacklinks, legend: legendVisible })); } catch (e) {} };
   if (backBox) backBox.checked = showBacklinks;
@@ -583,7 +605,7 @@ for (const p of document.querySelectorAll("pre.shiki")) {
       if (!f && e.dup) continue; // overview: draw each undirected pair once
       let lit = !f && !hoverSec, back = false;
       if (f) { if (e.s === f.i) lit = true; else if (showBacklinks && e.t === f.i && !f.out.has(e.s)) { lit = true; back = true; } }
-      ctx.strokeStyle = !lit ? C.fg + "0d" : back ? C.fg + "26" : C.fg + "40";
+      ctx.strokeStyle = !lit ? C.fg + "0d" : back ? C.fg + "18" : C.fg + "26";
       ctx.lineWidth = (back ? 0.7 : 1) / cam.s;
       const a = nodes[e.s], b = nodes[e.t]; ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
     }
@@ -826,7 +848,7 @@ for (const p of document.querySelectorAll("pre.shiki")) {
   function draw() {
     ctx.clearRect(0, 0, W, H); const F = fg(), center = screen.find((p) => p.n.me);
     screen.forEach((p) => { if (p.n.me) return; ctx.beginPath(); ctx.moveTo(center.x, center.y); ctx.lineTo(p.x, p.y);
-      ctx.strokeStyle = F + (hover === p.n ? "66" : "2a"); ctx.lineWidth = 1; ctx.stroke(); });
+      ctx.strokeStyle = F + (hover === p.n ? "26" : "14"); ctx.lineWidth = 1; ctx.stroke(); });
     ctx.font = '12px ' + (getComputedStyle(document.body).fontFamily || "sans-serif"); ctx.textAlign = "center";
     screen.forEach((p) => {
       const on = !hover || hover === p.n || p.n.me;
@@ -1078,7 +1100,7 @@ async function build(root, { serve = false } = {}) {
   }
 
   for (const pg of pages) {
-    await write(join(outDir, pg.outRel), pageHtml({ ...pg, theme, extraCss: override, siteTitle, themeColor: manifest?.background_color, themeColorDark: ext.dark?.bg, hasManifest: !!manifest, lang: pg.locale, langSwitch: switcherFor(pg), hreflang: hreflangFor(pg), nav: crumbsFor(pg), isHome: pg.outRel === localeHome[pg.locale], graphJson, comments: commentsOut, showGeneratorAttribution }));
+    await write(join(outDir, pg.outRel), pageHtml({ ...pg, theme, extraCss: override, siteTitle, themeColor: manifest?.background_color, themeColorDark: ext.dark?.bg, hasManifest: !!manifest, lang: pg.locale, langSwitch: switcherFor(pg), hreflang: hreflangFor(pg), nav: crumbsFor(pg), isHome: pg.outRel === localeHome[pg.locale], graphJson, comments: commentsOut, showGeneratorAttribution, showFooterActions }));
     await write(join(outDir, pg.twinRel), pg.src.replace(/(\]\([^)]*?)README\.md/gi, "$1index.md"));
   }
   let copied = 0;

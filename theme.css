@@ -55,26 +55,19 @@ pre code { background: none; padding: 0; }
 .wrap img { display: block; max-width: 100%; height: auto; margin: 28px auto;
   border: 1px solid var(--line); border-radius: 14px; cursor: zoom-in; }
 .wrap img.logo { margin: 0 0 20px; border: 0; border-radius: 0; cursor: default; }
-.table-wrap { position: relative; width: min(1040px, calc(100vw - 32px));
-  margin: 28px 50% 34px; transform: translateX(-50%); overflow-x: auto;
+.table-wrap { position: relative; width: 100%; margin: 28px 0 34px; overflow-x: auto;
   overscroll-behavior-x: contain; scrollbar-width: thin; scrollbar-color: var(--line) transparent;
-  border: 1px solid var(--line); border-radius: 14px; background: var(--bg); }
+  background: transparent; }
 .table-wrap::-webkit-scrollbar { height: 10px; }
 .table-wrap::-webkit-scrollbar-thumb { background: var(--line); border-radius: 999px; }
-table { width: 100%; min-width: 680px; table-layout: auto; border-spacing: 0; border-collapse: separate; }
-th, td { max-width: 360px; padding: 11px 14px; text-align: left; vertical-align: top;
+table { width: max-content; min-width: 100%; max-width: none; table-layout: auto; border-spacing: 0; border-collapse: collapse; }
+th, td { min-width: 8rem; max-width: 360px; padding: 11px 14px; text-align: left; vertical-align: top;
   white-space: normal; overflow-wrap: break-word; word-break: normal;
-  border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); }
-th { font-weight: inherit; color: var(--fg); background: var(--bg); }
-tr:last-child td { border-bottom: 0; }
-th:last-child, td:last-child { border-right: 0; }
+  border: 0; border-bottom: 1px solid color-mix(in srgb, var(--fg) 14%, transparent); }
+th { font-weight: 700; color: var(--fg); background: color-mix(in srgb, var(--fg) 4%, var(--bg)); }
+tbody tr:last-child td { border-bottom: 0; }
 td > :last-child { margin-bottom: 0; }
 td code { white-space: normal; overflow-wrap: anywhere; }
-@media (max-width: 720px) {
-  .table-wrap::after { content: "scroll ->"; position: absolute; top: 8px; right: 8px;
-    padding: 2px 7px; border: 1px solid var(--line); border-radius: 999px;
-    background: var(--bg); color: var(--fg); font-size: 11px; }
-}
 .shots { display: flex; width: min(1040px, calc(100vw - 32px)); gap: 14px; overflow-x: auto; margin: 28px 50%; transform: translateX(-50%);
   padding-bottom: 10px; scroll-snap-type: x mandatory; -webkit-overflow-scrolling: touch; }
 .shots img { height: 440px; border-radius: 22px; flex: 0 0 auto;
@@ -99,7 +92,9 @@ img + ul, img + ol, .imgrow + ul, .imgrow + ol, pre + ul, pre + ol { margin-top:
 .lightbox-open { overflow: hidden; }
 .actions { display: flex; flex-wrap: wrap; gap: 12px; margin: 28px 0 36px; }
 a.btn { display: inline-block; padding: 10px 18px; border-radius: 10px;
-  background: var(--accent); color: var(--bg); text-decoration: none; }
+  background: var(--accent); color: var(--bg); font-weight: 700; line-height: 1.35; text-decoration: none; }
+a.action-link::after { content: " →"; }
+a.btn:hover { filter: brightness(1.08); }
 a.btn.ghost { background: var(--bg); color: var(--accent); border: 1px solid var(--line); }
 footer { color: var(--fg); border-top: 1px solid var(--line); padding-top: 20px; }
 footer a { color: var(--accent); }
@@ -199,8 +194,9 @@ pre.shiki:hover .copy-code, .copy-code:focus { opacity: 1; }
 
 /* --- top-right cluster: search icon + language switcher --- */
 .topbar { position: fixed; top: 14px; right: 14px; z-index: 40; display: flex; align-items: center; gap: 8px; }
-.ds-toggle { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; padding: 0;
+.ds-toggle { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; padding: 0;
   color: var(--fg); background: none; border: 0; cursor: pointer; }
+.ds-toggle svg { width: 21px; height: 21px; }
 .ds-toggle:hover, .ds-toggle:focus-visible { color: var(--accent); }
 .ds-toggle:focus, .ds-toggle:focus-visible { outline: none; }
 /* --- i18n language switcher (folder2website i18n enhancement) --- */
@@ -296,7 +292,7 @@ body.graph-open-body { overflow: hidden; }
 .graph-opt input { accent-color: var(--accent); }
 
 /* site search: a popover panel from the top-right search icon, results drop in below */
-.docsearch { position: fixed; top: 52px; right: 14px; z-index: 45; width: min(440px, calc(100vw - 28px)); }
+.docsearch { position: fixed; top: 62px; right: 14px; z-index: 45; width: min(440px, calc(100vw - 28px)); }
 .docsearch[hidden] { display: none; }
 .ds-field { position: relative; }
 .ds-field .ds-ic { position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
@@ -306,12 +302,11 @@ body.graph-open-body { overflow: hidden; }
 .ds-input::placeholder { color: color-mix(in srgb, var(--fg) 45%, var(--bg)); }
 .ds-input:focus { border-color: var(--accent); }
 .ds-results { position: absolute; left: 0; right: 0; top: calc(100% + 6px); z-index: 60;
-  background: var(--bg); border: 1px solid var(--line); border-radius: 12px; max-height: 62vh; overflow-y: auto;
+  padding: 6px; background: var(--bg); border: 1px solid var(--line); border-radius: 12px; max-height: 62vh; overflow-y: auto;
   box-shadow: 0 14px 34px color-mix(in srgb, var(--fg) 18%, transparent), 0 2px 6px color-mix(in srgb, var(--fg) 10%, transparent); }
 .ds-results[hidden] { display: none; }
-.ds-hit { display: block; padding: 10px 14px; text-decoration: none; color: var(--fg);
-  border-bottom: 1px solid color-mix(in srgb, var(--fg) 8%, transparent); }
-.ds-hit:last-child { border-bottom: 0; }
+.ds-hit { display: block; padding: 10px 12px; border-radius: 8px; text-decoration: none; color: var(--fg); }
+.ds-hit + .ds-hit { margin-top: 2px; }
 .ds-hit:hover, .ds-hit:focus, .ds-hit[aria-selected="true"] { background: color-mix(in srgb, var(--accent) 12%, transparent); }
 .ds-top { display: flex; align-items: baseline; gap: 9px; }
 .ds-top strong { font-weight: 600; }
@@ -319,7 +314,10 @@ body.graph-open-body { overflow: hidden; }
 .ds-where { display: block; margin-top: 1px; font-size: 12.5px; color: var(--accent); }
 .ds-desc { display: block; margin-top: 1px; font-size: 13px; opacity: .7; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ds-empty { padding: 14px; opacity: .6; font-size: 14px; }
-@media (max-width: 600px) { .ds-sec { display: none; } }
+@media (max-width: 600px) {
+  .docsearch { top: 56px; right: 8px; width: min(440px, calc(100vw - 16px)); }
+  .ds-sec { display: none; }
+}
 
 /* search lands you at a section: flash the heading so it is easy to spot */
 .section-flash { animation: section-flash 1.9s ease-out; border-radius: 6px; }
