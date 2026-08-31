@@ -411,11 +411,10 @@ function pageHtml({ title, tagline, body, theme, extraCss, depth, og, canonical,
   const graphModal = `<div class="graph-modal" hidden aria-hidden="true" role="dialog" aria-label="Knowledge graph">
       <div class="graph-bar">
         <div class="graph-bar-left"><button type="button" class="graph-back">← Back</button></div>
-        <div class="graph-bar-right"><button type="button" class="graph-overview" aria-label="Show whole graph" title="Show whole graph">${graphIcon}</button><div class="graph-settings"><button type="button" class="graph-gear" aria-haspopup="true" aria-expanded="false" aria-label="Settings" title="Settings">${settingsIcon}</button><div class="graph-menu" hidden><label class="graph-opt"><input type="checkbox" class="graph-backlinks" /> Show backlinks</label><label class="graph-opt"><input type="checkbox" class="graph-legend-toggle" /> Show legend</label></div></div></div>
+        <div class="graph-bar-right"><button type="button" class="graph-overview" aria-label="Show whole graph" title="Show whole graph">${graphIcon}</button><div class="graph-settings"><button type="button" class="graph-gear" aria-haspopup="true" aria-expanded="false" aria-label="Settings" title="Settings">${settingsIcon}</button><div class="graph-menu" hidden><label class="graph-opt"><input type="checkbox" class="graph-backlinks" /> Show backlinks</label></div></div></div>
       </div>
       <div class="graph-stage">
         <canvas class="graph-canvas"></canvas>
-        <div class="graph-legend"></div>
         <aside class="graph-detail" hidden><strong class="gd-title"></strong><span class="gd-desc"></span><span class="gd-meta"></span><div class="gd-actions"><a class="gd-open" href="#">Open page →</a><button type="button" class="gd-recenter" hidden>Recenter</button></div></aside>
       </div>
     </div>
@@ -510,13 +509,12 @@ for (const p of document.querySelectorAll("pre.shiki")) {
   const backBtn = modal.querySelector(".graph-back");
   const overviewBtn = modal.querySelector(".graph-overview");
   const backBox = modal.querySelector(".graph-backlinks");
-  const settingsWrap = modal.querySelector(".graph-settings"), gear = modal.querySelector(".graph-gear"), gmenu = modal.querySelector(".graph-menu"), legendToggle = modal.querySelector(".graph-legend-toggle");
-  const legendEl = modal.querySelector(".graph-legend");
+  const settingsWrap = modal.querySelector(".graph-settings"), gear = modal.querySelector(".graph-gear"), gmenu = modal.querySelector(".graph-menu");
   const detail = modal.querySelector(".graph-detail");
   const gdTitle = modal.querySelector(".gd-title"), gdDesc = modal.querySelector(".gd-desc"), gdMeta = modal.querySelector(".gd-meta"), gdOpen = modal.querySelector(".gd-open"), gdRecenter = modal.querySelector(".gd-recenter");
   const ctx = canvas.getContext("2d");
   let nodes = [], links = [], raf = 0, ready = false, loaded = false, fitDone = false, cur = null;
-  let W = 0, H = 0, hover = null, selected = null, showBacklinks = false, drag = null, pan = null, moved = false, userCam = false, fitS = 1, hoverSec = null;
+  let W = 0, H = 0, hover = null, selected = null, showBacklinks = false, drag = null, pan = null, moved = false, userCam = false, fitS = 1;
   let history = [];
   const cam = { x: 0, y: 0, s: 1 };
   let camGoal = null, sim = null;
@@ -530,21 +528,13 @@ for (const p of document.querySelectorAll("pre.shiki")) {
   const rootUrl = (() => { try { return new URL(PREFIX || "./", location.href).href; } catch (e) { return null; } })();
   function hrefToId(href) { try { const abs = new URL(href, location.href).href.split("#")[0].split("?")[0]; if (!rootUrl || !abs.startsWith(rootUrl)) return null; let id = abs.slice(rootUrl.length); if (id === "" || id.endsWith("/")) id += "index.html"; return decodeURIComponent(id); } catch (e) { return null; } }
   window.__docMeta = (href) => { const n = byId.get(hrefToId(href)); return n ? { t: n.t, d: n.d } : null; };
-  // persisted graph settings (backlinks, legend visibility) via localStorage
+  // Persist the optional backlink layer. The overview itself stays quiet.
   const SKEY = "folder2website-graph-settings";
   const _saved = (() => { try { return JSON.parse(localStorage.getItem(SKEY)) || {}; } catch (e) { return {}; } })();
   showBacklinks = _saved.backlinks === true;
-  let legendVisible = _saved.legend === true;
-  const saveSettings = () => { try { localStorage.setItem(SKEY, JSON.stringify({ backlinks: showBacklinks, legend: legendVisible })); } catch (e) {} };
+  const saveSettings = () => { try { localStorage.setItem(SKEY, JSON.stringify({ backlinks: showBacklinks })); } catch (e) {} };
   if (backBox) backBox.checked = showBacklinks;
-  if (legendToggle) legendToggle.checked = legendVisible;
-  if (legendEl) legendEl.hidden = !legendVisible;
   // Derive clusters from the first folder so the graph works for any documentation set.
-  const PALETTE = [
-    ["#7fa2ff", "#315fce"], ["#55d6a9", "#087d59"], ["#f4b66f", "#a45b08"],
-    ["#dc91ea", "#8c3da0"], ["#73ced9", "#177b88"], ["#f08f9a", "#ad3c4c"],
-    ["#c4d56f", "#667613"], ["#a9a0ef", "#584fc0"],
-  ];
   const sections = [], sectionByKey = new Map();
   const words = (value) => value.replace(/[-_]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()).replace(/\b(And|Or|Of|The)\b/g, (word) => word.toLowerCase()).replace(/\bSaas\b/g, "SaaS").replace(/\bApi\b/g, "API").replace(/\bSso\b/g, "SSO");
   function sectionOf(id) {
@@ -552,20 +542,12 @@ for (const p of document.querySelectorAll("pre.shiki")) {
     const parts = id.split("/");
     const key = home ? "home" : parts.length > 1 ? parts[0] : "more";
     if (sectionByKey.has(key)) return sectionByKey.get(key);
-    const colors = PALETTE[sections.length % PALETTE.length];
-    const section = { key, label: home ? "Home" : key === "more" ? "More guides" : words(key), color: colors[0], colorLight: colors[1], index: sections.length, x: 0, y: 0 };
+    const section = { key, label: home ? "Home" : key === "more" ? "More guides" : words(key), index: sections.length, x: 0, y: 0 };
     sections.push(section); sectionByKey.set(key, section); return section;
   }
   // canvas colours follow the generated or custom page theme
-  const isDark = () => !!(window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
   const cssColor = (name, fallback) => getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
-  const TH = () => ({ dark: isDark(), bg: cssColor("--bg", "#ffffff"), fg: cssColor("--fg", "#1f2328"), accent: cssColor("--accent", "#0969da") });
-  const secColor = (n) => isDark() ? n.sec.color : n.sec.colorLight;
-  function buildLegend() {
-    if (!legendEl) return;
-    const dark = isDark();
-    legendEl.innerHTML = sections.map((s) => '<span class="graph-leg" data-sec="' + s.label + '"><i style="background:' + (dark ? s.color : s.colorLight) + '"></i>' + s.label + "</span>").join("");
-  }
+  const TH = () => ({ bg: cssColor("--bg", "#ffffff"), fg: cssColor("--fg", "#1f2328"), muted: cssColor("--muted", "#667085"), line: cssColor("--line", "#d0d5dd"), accent: cssColor("--accent", "#0969da") });
   function load() {
     if (loaded) return; loaded = true;
     try {
@@ -581,7 +563,6 @@ for (const p of document.querySelectorAll("pre.shiki")) {
       for (const n of nodes) { const u = new Set(n.out); n.inc.forEach((x) => u.add(x)); n.deg = u.size; }
       const clusterRadius = Math.min(220, 90 + nodes.length * 3);
       sections.forEach((section, i) => { const angle = -Math.PI / 2 + i * 6.2832 / Math.max(1, sections.length); section.x = Math.cos(angle) * clusterRadius; section.y = Math.sin(angle) * clusterRadius; });
-      buildLegend();
       cur = nodes.find((n) => n.id === CURRENT) || null;
       const D3 = window.d3;
       if (D3) {
@@ -643,20 +624,22 @@ for (const p of document.querySelectorAll("pre.shiki")) {
       let lit = false, back = false;
       if (f) { if (e.s === f.i) lit = true; else if (showBacklinks && e.t === f.i && !f.out.has(e.s)) { lit = true; back = true; } }
       if (!lit) continue;
-      ctx.strokeStyle = back ? C.fg + "18" : C.fg + "26";
+      ctx.strokeStyle = C.line; ctx.globalAlpha = back ? 0.65 : 1;
       ctx.lineWidth = (back ? 0.7 : 1) / cam.s;
       const a = pos(nodes[e.s]), b = pos(nodes[e.t]); ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
     }
+    ctx.globalAlpha = 1;
     for (const n of nodes) {
       if (focused && !nset.has(n.i)) continue;
-      const lit = hoverSec ? n.sec.label === hoverSec : (!f || nset.has(n.i));
+      const lit = !f || nset.has(n.i);
       ctx.globalAlpha = lit ? 1 : 0.1;
       const big = n === f || n === selected || n === cur;
+      const screenRadius = rad(n) * (big ? 1.4 : 1);
       const p = pos(n);
-      ctx.beginPath(); ctx.arc(p.x, p.y, rad(n) * (big ? 1.4 : 1), 0, 6.2832);
-      ctx.fillStyle = secColor(n); ctx.fill();
+      ctx.beginPath(); ctx.arc(p.x, p.y, screenRadius / cam.s, 0, 6.2832);
+      ctx.fillStyle = big ? C.accent : C.muted; ctx.fill();
       if (n === f || n === selected) { ctx.lineWidth = 2 / cam.s; ctx.strokeStyle = C.fg; ctx.stroke(); }
-      if (n === cur) { ctx.beginPath(); ctx.arc(p.x, p.y, rad(n) * 1.4 + 5 / cam.s, 0, 6.2832); ctx.lineWidth = 1.5 / cam.s; ctx.strokeStyle = C.accent; ctx.stroke(); } // "you are here"
+      if (n === cur) { ctx.beginPath(); ctx.arc(p.x, p.y, (rad(n) * 1.4 + 5) / cam.s, 0, 6.2832); ctx.lineWidth = 1.5 / cam.s; ctx.strokeStyle = C.accent; ctx.stroke(); } // "you are here"
     }
     ctx.globalAlpha = 1; ctx.restore();
     // Screen space: the overview labels sections; focused and hovered nodes label one hop.
@@ -676,18 +659,19 @@ for (const p of document.querySelectorAll("pre.shiki")) {
     for (const n of labelOrder(f)) {
       const p = pos(n), sx = W / 2 + cam.x + p.x * cam.s, sy = H / 2 + cam.y + p.y * cam.s;
       if (sx < 0 || sx > W || sy < 0 || sy > H) continue;
-      const w = ctx.measureText(n.t).width, lx = sx + rad(n) * cam.s + 5;
+      const big = n === f || n === selected || n === cur;
+      const w = ctx.measureText(n.t).width, lx = sx + rad(n) * (big ? 1.4 : 1) + 5;
       const box = { x: lx - 2, y: sy - 9, w: w + 4, h: 18 };
       let clash = false; for (const p of placed) { if (box.x < p.x + p.w && box.x + box.w > p.x && box.y < p.y + p.h && box.y + box.h > p.y) { clash = true; break; } }
       if (clash) continue;
       placed.push(box);
       ctx.lineWidth = 3; ctx.strokeStyle = C.bg; ctx.strokeText(n.t, lx, sy);
-      ctx.fillStyle = (n === f || n === cur) ? C.fg : C.fg + "b3"; ctx.fillText(n.t, lx, sy);
+      ctx.globalAlpha = (n === f || n === cur) ? 1 : 0.7; ctx.fillStyle = C.fg; ctx.fillText(n.t, lx, sy); ctx.globalAlpha = 1;
       if (placed.length > 44) break;
     }
   }
   function loop() { if (ready) { tick(); if (!fitDone && sim && sim.alpha() < 0.25) { fit(); fitDone = true; } updateCamGoal(); stepCam(); draw(); } raf = requestAnimationFrame(loop); }
-  function pick(px, py) { const w = toWorld(px, py), layout = selected ? focusLayout(selected) : null, visible = selected ? neighbours(selected) : null; let best = null, bd = Infinity; for (const n of nodes) { if (visible && !visible.has(n.i)) continue; const p = layout?.get(n.i) || n, dx = p.x - w.x, dy = p.y - w.y, dd = dx * dx + dy * dy, rr = rad(n) + 8 / cam.s; if (dd < rr * rr && dd < bd) { bd = dd; best = n; } } return best; }
+  function pick(px, py) { const w = toWorld(px, py), layout = selected ? focusLayout(selected) : null, visible = selected ? neighbours(selected) : null; let best = null, bd = Infinity; for (const n of nodes) { if (visible && !visible.has(n.i)) continue; const p = layout?.get(n.i) || n, dx = p.x - w.x, dy = p.y - w.y, dd = dx * dx + dy * dy, big = n === selected || n === cur, rr = (rad(n) * (big ? 1.4 : 1) + 8) / cam.s; if (dd < rr * rr && dd < bd) { bd = dd; best = n; } } return best; }
   // The detail rail represents persistent selection. Hover only previews relationships on
   // the canvas, so the layout does not jump while the pointer moves across the overview.
   function syncRecenter() { gdRecenter.hidden = !selected || !userCam; }
@@ -716,7 +700,6 @@ for (const p of document.querySelectorAll("pre.shiki")) {
   backBtn.addEventListener("click", goBack);
   overviewBtn.addEventListener("click", () => showOverview());
   backBox.addEventListener("change", () => { showBacklinks = backBox.checked; saveSettings(); updateCamGoal(); renderDetail(); });
-  legendToggle.addEventListener("change", () => { legendVisible = legendToggle.checked; if (legendEl) legendEl.hidden = !legendVisible; saveSettings(); });
   gear.addEventListener("click", (e) => { e.stopPropagation(); const willOpen = gmenu.hidden; gmenu.hidden = !willOpen; gear.setAttribute("aria-expanded", String(willOpen)); });
   document.addEventListener("click", (e) => { if (settingsWrap && !settingsWrap.contains(e.target)) { gmenu.hidden = true; gear.setAttribute("aria-expanded", "false"); } });
   document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !modal.hidden) goBack(); });
@@ -734,11 +717,6 @@ for (const p of document.querySelectorAll("pre.shiki")) {
   });
   canvas.addEventListener("pointerleave", () => { hover = null; renderDetail(); });
   canvas.addEventListener("wheel", (e) => { e.preventDefault(); userCam = true; syncRecenter(); camGoal = null; cam.s = Math.max(0.3, Math.min(3, cam.s * Math.exp(-e.deltaY * 0.001))); }, { passive: false });
-  if (legendEl) {
-    legendEl.addEventListener("pointerover", (e) => { const el = e.target.closest(".graph-leg"); if (el) hoverSec = el.getAttribute("data-sec"); }); // hover a legend row -> highlight that section
-    legendEl.addEventListener("pointerleave", () => { hoverSec = null; });
-  }
-  if (window.matchMedia) window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { if (ready) buildLegend(); }); // re-tint legend on theme switch
   // arrived via the graph (?from=...)? offer a way back to where we came from
   (function () {
     const from = new URLSearchParams(location.search).get("from");

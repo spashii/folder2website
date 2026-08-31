@@ -52,7 +52,7 @@ test("renders standalone links as portable action buttons", async () => {
 
 test("keeps tables simple and keyboard-scrollable", async () => {
   const html = await Bun.file(join(regularOut, "index.html")).text();
-  expect(html).toContain("--width: 70ch");
+  expect(html).toContain("--width: 40rem");
   expect(html).toContain('<div class="table-wrap" tabindex="0"><table>');
   expect(html).toContain("border-bottom: 1px solid color-mix");
   expect(html).not.toContain("border-right: 1px solid var(--line)");
@@ -70,11 +70,17 @@ test("supports explicit footer opt-outs", async () => {
 test("uses quiet graph defaults", async () => {
   const html = await Bun.file(join(regularOut, "index.html")).text();
   expect(html).toContain('showBacklinks = _saved.backlinks === true');
-  expect(html).toContain('legendVisible = _saved.legend === true');
   expect(html).toContain('if (!f) continue; // proximity and section clusters carry the overview');
   expect(html).toContain('if (focused && !nset.has(n.i)) continue');
   expect(html).toContain('function focusLayout(f)');
   expect(html).toContain('function sectionOf(id)');
+  expect(html).toContain('ctx.fillStyle = big ? C.accent : C.muted');
+  expect(html).toContain('ctx.strokeStyle = C.line');
+  expect(html).toContain('screenRadius / cam.s');
+  expect(html).toContain('(rad(n) * 1.4 + 5) / cam.s');
+  expect(html).not.toContain('rad(n) * cam.s + 5');
+  expect(html).not.toContain("const PALETTE");
+  expect(html).not.toContain('class="graph-legend"');
   expect(html).toContain('const SKEY = "folder2website-graph-settings"');
 });
 
