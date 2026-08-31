@@ -38,7 +38,7 @@ This page links [back to the example](README.md).
   }));
 
   await $`${process.execPath} run ${generator} ${fixture} --out ${regularOut} --manifest site.webmanifest`.quiet();
-  await $`${process.execPath} run ${generator} ${fixture} --out ${minimalOut} --manifest site.webmanifest --hide-generator-attribution --hide-footer-actions`.quiet();
+  await $`${process.execPath} run ${generator} ${fixture} --out ${minimalOut} --manifest site.webmanifest --hide-generator-attribution --hide-footer-actions --hide-related-pages`.quiet();
 });
 
 afterAll(() => rmSync(work, { recursive: true, force: true }));
@@ -88,12 +88,19 @@ test("uses quiet graph defaults", async () => {
   expect(html).toContain('const SKEY = "folder2website-graph-settings"');
 });
 
+test("supports an explicit generated related-pages opt-out", async () => {
+  const html = await Bun.file(join(minimalOut, "index.html")).text();
+  expect(html).toContain('id="related-guides"');
+  expect(html).not.toContain('class="localmap"');
+  expect(html).toContain('{"s":"index.html","t":"guide.html"}');
+});
+
 test("keeps related pages textual and graph navigation consistent", async () => {
   const html = await Bun.file(join(regularOut, "index.html")).text();
   expect(html).toContain('<div class="related-grid">');
   expect(html).toContain('<a href="guide.html">Related guide</a>');
   expect(html.match(/<h2>Related pages<\/h2>/g)).toHaveLength(1);
-  expect(html).not.toContain("Related guides");
+  expect(html).toContain("Related guides");
   expect(html).not.toContain("localmap-canvas");
   expect(html).toContain('<button type="button" class="graph-back">← Back</button>');
   expect(html).toContain('class="graph-overview" aria-label="Show whole graph"');

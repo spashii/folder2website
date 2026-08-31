@@ -39,6 +39,8 @@ GITHUB_TOKEN=github_pat_... bunx github:spashii/folder2website#main owner/repo
 - `--hide-generator-attribution`: omit the folder2website attribution from
   page footers.
 - `--hide-footer-actions`: omit the edit and copy actions from page footers.
+- `--hide-related-pages`: omit the generated related-page list. Markdown links
+  still populate the knowledge graph.
 - `--serve`: live preview.
 - `--port <n>`: live preview port. Default: `4321`.
 
@@ -85,8 +87,8 @@ GITHUB_TOKEN=github_pat_... bunx github:spashii/folder2website#main owner/repo
   section. Selecting a page shows one hop. Backlinks are hidden by default.
   Graph colors use the roles in the manifest theme.
 - A grouped "Related pages" list on each page. It can open the graph focused
-  on the current page. A trailing Markdown section named "Related guides" or
-  "Related pages" supplies links to this list without rendering a duplicate.
+  on the current page. Use `--hide-related-pages` when the source already has
+  its own related-links section.
 - Optional language switcher. See [`docs/manifest.md`](docs/manifest.md).
 - Optional giscus comments. See [`docs/manifest.md`](docs/manifest.md).
 

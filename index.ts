@@ -5,7 +5,7 @@
 //
 //   folder2website <path-or-repo> [--out <dir>] [--token <T>] [--entry f.md ...]
 //                                 [--base-url https://...] [--manifest <path>] [--clone-dir <dir>]
-//                                 [--hide-generator-attribution] [--hide-footer-actions]
+//                                 [--hide-generator-attribution] [--hide-footer-actions] [--hide-related-pages]
 //                                 [--port 4321] [--serve]
 //
 // ponytail: a small script, not a framework. Want search/sidebar/versioning?
@@ -23,7 +23,7 @@ import { tmpdir } from "node:os";
 import { makeOgPng } from "./og.ts";
 
 const argv = process.argv.slice(2);
-const usage = "usage: folder2website <path-or-repo> [--out <dir>] [--token <T>] [--entry f.md ...] [--base-url <url>] [--manifest <path>] [--clone-dir <dir>] [--hide-generator-attribution] [--hide-footer-actions] [--port <n>] [--serve]";
+const usage = "usage: folder2website <path-or-repo> [--out <dir>] [--token <T>] [--entry f.md ...] [--base-url <url>] [--manifest <path>] [--clone-dir <dir>] [--hide-generator-attribution] [--hide-footer-actions] [--hide-related-pages] [--port <n>] [--serve]";
 if (argv.includes("-h") || argv.includes("--help")) {
   console.log(usage);
   process.exit(0);
@@ -42,6 +42,7 @@ const manifestArg = flag("--manifest");
 const clonePath = flag("--clone-dir") ? resolve(flag("--clone-dir")) : null;
 const showGeneratorAttribution = !argv.includes("--hide-generator-attribution");
 const showFooterActions = !argv.includes("--hide-footer-actions");
+const showRelatedPages = !argv.includes("--hide-related-pages");
 const port = Number(flag("--port") ?? 4321);
 if (!Number.isInteger(port) || port < 1 || port > 65535) {
   console.error("--port must be an integer from 1 to 65535");
@@ -321,13 +322,6 @@ function markStandaloneActionLinks(body) {
   });
 }
 
-// A final related-links list is useful source metadata, but rendering it beside the
-// generated related-page list repeats the same navigation. Keep its links in the
-// graph, then let the generator present the relationship once.
-function stripTrailingRelatedLinks(body) {
-  return body.replace(/\s*<h([23])>\s*Related (?:guides|pages)\s*<\/h\1>\s*<(?:ul|ol)>[\s\S]*?<\/(?:ul|ol)>\s*$/i, "");
-}
-
 async function renderMd(src, mdRel, queue, seen, assets) {
   src = src.trim();
   // folder2website is frontmatter-less by design; our docs use YAML frontmatter, so strip
@@ -355,6 +349,7 @@ async function renderMd(src, mdRel, queue, seen, assets) {
     `<div class="${(imgs.match(/<img/g) || []).length > 3 ? "shots" : "imgrow"}">${imgs}</div>`);
   body = markStandaloneActionLinks(body);
   body = body.replace(/<p((?![^>]*\bactions\b)[^>]*)>/, (_m, attrs) => `<p${addHtmlClass(attrs, "tagline")}>`);
+  ({ body } = enrichHeadings(body));
 
   for (const m of body.matchAll(/<img[^>]*\bsrc="([^"]+)"/g))
     if (isLocal(m[1])) { const a = relAsset(mdRel, m[1]); if (a) assets.add(a); }
@@ -371,8 +366,6 @@ async function renderMd(src, mdRel, queue, seen, assets) {
     assets.add(t);
     return full;
   });
-  body = stripTrailingRelatedLinks(body);
-  ({ body } = enrichHeadings(body));
   return { title, tagline, body, src, outLinks, hasMermaid: body.includes('<pre class="mermaid">') };
 }
 
@@ -383,7 +376,7 @@ function authorHtml(commit) {
 }
 const commitLine = (label, commit) => commit ? `${label} ${relativeDate(commit.date)} by ${authorHtml(commit)}` : "";
 
-function pageHtml({ title, tagline, body, theme, extraCss, depth, og, canonical, isIndex, siteTitle, logo, logoDark, editUrl, updated, created, twin, themeColor, themeColorDark, hasManifest, lang, langSwitch, hreflang, nav, isHome, graphJson, relatedPages, outRel, comments, hasMermaid, showGeneratorAttribution, showFooterActions }) {
+function pageHtml({ title, tagline, body, theme, extraCss, depth, og, canonical, isIndex, siteTitle, logo, logoDark, editUrl, updated, created, twin, themeColor, themeColorDark, hasManifest, lang, langSwitch, hreflang, nav, isHome, graphJson, relatedPages, outRel, comments, hasMermaid, showGeneratorAttribution, showFooterActions, showRelatedPages }) {
   const prefix = "../".repeat(depth);
   const css = theme.replace(/url\("fonts\//g, `url("${prefix}fonts/`) + (extraCss || "");
   const favicon = logo;
@@ -446,7 +439,7 @@ function pageHtml({ title, tagline, body, theme, extraCss, depth, og, canonical,
           <h3>${esc(group.label)}</h3>
           <ul>${group.pages.map((page) => `<li><a href="${esc(prefix + page.id)}">${esc(page.title)}</a></li>`).join("")}</ul>
         </section>`).join("");
-  const localGraph = relatedGroups ? `\n      <section class="localmap" aria-label="Related pages">
+  const localGraph = showRelatedPages && relatedGroups ? `\n      <section class="localmap" aria-label="Related pages">
         <div class="localmap-head"><h2>Related pages</h2><button type="button" class="localmap-explore graph-open graph-open-current">Explore in graph →</button></div>
         <div class="related-grid">${relatedGroups}</div>
       </section>` : "";
@@ -1085,7 +1078,7 @@ async function build(root, { serve = false } = {}) {
   }
 
   for (const pg of pages) {
-    await write(join(outDir, pg.outRel), pageHtml({ ...pg, theme, extraCss: override, siteTitle, themeColor: manifest?.background_color, themeColorDark: ext.dark?.bg, hasManifest: !!manifest, lang: pg.locale, langSwitch: switcherFor(pg), hreflang: hreflangFor(pg), nav: crumbsFor(pg), isHome: pg.outRel === localeHome[pg.locale], graphJson, comments: commentsOut, showGeneratorAttribution, showFooterActions }));
+    await write(join(outDir, pg.outRel), pageHtml({ ...pg, theme, extraCss: override, siteTitle, themeColor: manifest?.background_color, themeColorDark: ext.dark?.bg, hasManifest: !!manifest, lang: pg.locale, langSwitch: switcherFor(pg), hreflang: hreflangFor(pg), nav: crumbsFor(pg), isHome: pg.outRel === localeHome[pg.locale], graphJson, comments: commentsOut, showGeneratorAttribution, showFooterActions, showRelatedPages }));
     await write(join(outDir, pg.twinRel), pg.src.replace(/(\]\([^)]*?)README\.md/gi, "$1index.md"));
   }
   let copied = 0;
