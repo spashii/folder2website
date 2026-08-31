@@ -46,11 +46,13 @@ test("renders standalone links as portable action buttons", async () => {
   expect(html).toContain('<p class="tagline">Use this guide to understand the example workflow.</p>');
   expect(html).toContain('name="description" content="Use this guide to understand the example workflow."');
   expect(html).toContain('"d":"Use this guide to understand the example workflow.');
+  expect(html).toContain("background: var(--bg); color: var(--accent)");
+  expect(html).toContain("a.btn:hover { border-color: var(--accent); color: var(--fg); }");
 });
 
 test("keeps tables simple and keyboard-scrollable", async () => {
   const html = await Bun.file(join(regularOut, "index.html")).text();
-  expect(html).toContain("--width: 600px");
+  expect(html).toContain("--width: 70ch");
   expect(html).toContain('<div class="table-wrap" tabindex="0"><table>');
   expect(html).toContain("border-bottom: 1px solid color-mix");
   expect(html).not.toContain("border-right: 1px solid var(--line)");
@@ -83,9 +85,13 @@ test("keeps related pages textual and graph navigation consistent", async () => 
   expect(html).not.toContain("localmap-canvas");
   expect(html).toContain('<button type="button" class="graph-back">← Back</button>');
   expect(html).toContain('class="graph-overview" aria-label="Show whole graph"');
+  expect(html).toContain('class="graph-gear" aria-haspopup="true" aria-expanded="false" aria-label="Settings" title="Settings"><svg');
   expect(html).toContain('class="ds-toggle graph-open graph-open-overview"');
   expect(html).toContain('class="localmap-explore graph-open graph-open-current"');
+  expect(html).toContain("Explore in graph →");
   expect(html).not.toContain("← Whole graph");
+  expect(html).not.toContain('class="graph-close"');
+  expect(html).toContain(".related-grid { display: flex; flex-direction: column");
 });
 
 test("reserves laptop space for graph details", async () => {
@@ -93,4 +99,6 @@ test("reserves laptop space for graph details", async () => {
   expect(html).toContain('<div class="graph-stage">');
   expect(html).toContain(".graph-stage.has-detail { grid-template-columns: minmax(0, 1fr) 320px; }");
   expect(html).toContain('stage.classList.toggle("has-detail", !!f)');
+  expect(html).toContain('<button type="button" class="gd-recenter" hidden>Recenter</button>');
+  expect(html).toContain('function syncRecenter() { gdRecenter.hidden = !selected || !userCam; }');
 });

@@ -407,15 +407,16 @@ function pageHtml({ title, tagline, body, theme, extraCss, depth, og, canonical,
   const metaBody = actions + lines.map((line) => `<div class="meta-line">${line}</div>`).join("") + madeWith;
   const meta = metaBody ? `\n      <footer class="meta">${metaBody}</footer>` : "";
   const graphIcon = `<svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M5.2 5.7 8 8m4.8-2.3L10 8m-1 2.2v2.3"/><circle cx="4" cy="4.5" r="2"/><circle cx="14" cy="4.5" r="2"/><circle cx="9" cy="14.5" r="2"/><circle cx="9" cy="9" r="1.7"/></svg>`;
+  const settingsIcon = `<svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M2 4h3m3 0h8M2 9h8m3 0h3M2 14h5m3 0h6"/><circle cx="6.5" cy="4" r="1.5"/><circle cx="11.5" cy="9" r="1.5"/><circle cx="8.5" cy="14" r="1.5"/></svg>`;
   const graphModal = `<div class="graph-modal" hidden aria-hidden="true" role="dialog" aria-label="Knowledge graph">
       <div class="graph-bar">
         <div class="graph-bar-left"><button type="button" class="graph-back">← Back</button></div>
-        <div class="graph-bar-right"><button type="button" class="graph-overview" aria-label="Show whole graph" title="Show whole graph">${graphIcon}</button><div class="graph-settings"><button type="button" class="graph-gear" aria-haspopup="true" aria-expanded="false" aria-label="Settings">Settings</button><div class="graph-menu" hidden><label class="graph-opt"><input type="checkbox" class="graph-backlinks" /> Show backlinks</label><label class="graph-opt"><input type="checkbox" class="graph-legend-toggle" /> Show legend</label></div></div><button type="button" class="graph-close" aria-label="Close knowledge graph">Close</button></div>
+        <div class="graph-bar-right"><button type="button" class="graph-overview" aria-label="Show whole graph" title="Show whole graph">${graphIcon}</button><div class="graph-settings"><button type="button" class="graph-gear" aria-haspopup="true" aria-expanded="false" aria-label="Settings" title="Settings">${settingsIcon}</button><div class="graph-menu" hidden><label class="graph-opt"><input type="checkbox" class="graph-backlinks" /> Show backlinks</label><label class="graph-opt"><input type="checkbox" class="graph-legend-toggle" /> Show legend</label></div></div></div>
       </div>
       <div class="graph-stage">
         <canvas class="graph-canvas"></canvas>
         <div class="graph-legend"></div>
-        <aside class="graph-detail" hidden><strong class="gd-title"></strong><span class="gd-desc"></span><span class="gd-meta"></span><div class="gd-actions"><a class="gd-open" href="#">Open page →</a><button type="button" class="gd-recenter">Recenter</button></div></aside>
+        <aside class="graph-detail" hidden><strong class="gd-title"></strong><span class="gd-desc"></span><span class="gd-meta"></span><div class="gd-actions"><a class="gd-open" href="#">Open page →</a><button type="button" class="gd-recenter" hidden>Recenter</button></div></aside>
       </div>
     </div>
     <script type="application/json" class="site-graph-data">${(graphJson || "{}").replace(/</g, "\\u003c")}</script>`;
@@ -439,7 +440,7 @@ function pageHtml({ title, tagline, body, theme, extraCss, depth, og, canonical,
           <ul>${group.pages.map((page) => `<li><a href="${esc(prefix + page.id)}">${esc(page.title)}</a></li>`).join("")}</ul>
         </section>`).join("");
   const localGraph = relatedGroups ? `\n      <section class="localmap" aria-label="Related pages">
-        <div class="localmap-head"><h2>Related pages</h2><button type="button" class="localmap-explore graph-open graph-open-current">Open knowledge graph →</button></div>
+        <div class="localmap-head"><h2>Related pages</h2><button type="button" class="localmap-explore graph-open graph-open-current">Explore in graph →</button></div>
         <div class="related-grid">${relatedGroups}</div>
       </section>` : "";
   const script = `<script>
@@ -506,7 +507,6 @@ for (const p of document.querySelectorAll("pre.shiki")) {
   if (!modal || !openers.length) return;
   const stage = modal.querySelector(".graph-stage");
   const canvas = modal.querySelector(".graph-canvas");
-  const closeBtn = modal.querySelector(".graph-close");
   const backBtn = modal.querySelector(".graph-back");
   const overviewBtn = modal.querySelector(".graph-overview");
   const backBox = modal.querySelector(".graph-backlinks");
@@ -690,6 +690,7 @@ for (const p of document.querySelectorAll("pre.shiki")) {
   function pick(px, py) { const w = toWorld(px, py), layout = selected ? focusLayout(selected) : null, visible = selected ? neighbours(selected) : null; let best = null, bd = Infinity; for (const n of nodes) { if (visible && !visible.has(n.i)) continue; const p = layout?.get(n.i) || n, dx = p.x - w.x, dy = p.y - w.y, dd = dx * dx + dy * dy, rr = rad(n) + 8 / cam.s; if (dd < rr * rr && dd < bd) { bd = dd; best = n; } } return best; }
   // The detail rail represents persistent selection. Hover only previews relationships on
   // the canvas, so the layout does not jump while the pointer moves across the overview.
+  function syncRecenter() { gdRecenter.hidden = !selected || !userCam; }
   function renderDetail() {
     const f = selected;
     stage.classList.toggle("has-detail", !!f);
@@ -699,7 +700,8 @@ for (const p of document.querySelectorAll("pre.shiki")) {
     const back = f.inc.size;
     gdMeta.textContent = f.out.size + (f.out.size === 1 ? " link" : " links") + (back ? " · " + back + " backlink" + (back === 1 ? "" : "s") : "") + (f.id === CURRENT ? " · you are here" : "");
     gdOpen.href = PREFIX + f.id + (f.id !== CURRENT ? "?from=" + encodeURIComponent(CURRENT) : "");
-    gdRecenter.onclick = () => { userCam = false; updateCamGoal(); };
+    syncRecenter();
+    gdRecenter.onclick = () => { userCam = false; syncRecenter(); updateCamGoal(); };
   }
   function applySelection(n) { selected = n || null; hover = null; userCam = false; overviewBtn.disabled = !selected; updateCamGoal(); renderDetail(); }
   function select(n, remember = true) { if (!n || n === selected) return; if (remember) history.push(selected); applySelection(n); }
@@ -711,7 +713,6 @@ for (const p of document.querySelectorAll("pre.shiki")) {
   // Opening from a page focuses that page. Back returns to the document; the graph icon
   // moves to the overview without pretending to be browser navigation.
   openers.forEach((b) => b.addEventListener("click", (e) => { e.preventDefault(); if (b.classList.contains("graph-open-current") && CURRENT && byId.get(CURRENT)) openFocused(CURRENT); else open(); }));
-  closeBtn.addEventListener("click", close);
   backBtn.addEventListener("click", goBack);
   overviewBtn.addEventListener("click", () => showOverview());
   backBox.addEventListener("change", () => { showBacklinks = backBox.checked; saveSettings(); updateCamGoal(); renderDetail(); });
@@ -724,7 +725,7 @@ for (const p of document.querySelectorAll("pre.shiki")) {
   canvas.addEventListener("pointermove", (e) => {
     const r = canvas.getBoundingClientRect(), px = e.clientX - r.left, py = e.clientY - r.top;
     if (drag) { const w = toWorld(px, py); drag.fx = w.x; drag.fy = w.y; moved = true; return; }
-    if (pan) { cam.x += e.clientX - pan.x; cam.y += e.clientY - pan.y; pan = { x: e.clientX, y: e.clientY }; moved = true; userCam = true; camGoal = null; return; }
+    if (pan) { cam.x += e.clientX - pan.x; cam.y += e.clientY - pan.y; pan = { x: e.clientX, y: e.clientY }; moved = true; userCam = true; syncRecenter(); camGoal = null; return; }
     const n = pick(px, py); if (n !== hover) { hover = n; renderDetail(); } canvas.style.cursor = n ? "pointer" : "grab";
   });
   canvas.addEventListener("pointerup", () => {
@@ -732,7 +733,7 @@ for (const p of document.querySelectorAll("pre.shiki")) {
     else if (pan) { if (!moved) showOverview(); pan = null; }
   });
   canvas.addEventListener("pointerleave", () => { hover = null; renderDetail(); });
-  canvas.addEventListener("wheel", (e) => { e.preventDefault(); userCam = true; camGoal = null; cam.s = Math.max(0.3, Math.min(3, cam.s * Math.exp(-e.deltaY * 0.001))); }, { passive: false });
+  canvas.addEventListener("wheel", (e) => { e.preventDefault(); userCam = true; syncRecenter(); camGoal = null; cam.s = Math.max(0.3, Math.min(3, cam.s * Math.exp(-e.deltaY * 0.001))); }, { passive: false });
   if (legendEl) {
     legendEl.addEventListener("pointerover", (e) => { const el = e.target.closest(".graph-leg"); if (el) hoverSec = el.getAttribute("data-sec"); }); // hover a legend row -> highlight that section
     legendEl.addEventListener("pointerleave", () => { hoverSec = null; });
