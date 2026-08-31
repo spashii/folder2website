@@ -62,7 +62,7 @@ const esc = (s) => s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g
 const ogTagline = (s) => { const f = s.split(/(?<=[.!?])\s/)[0]; return f.length <= 140 ? f : f.slice(0, 137).replace(/\s+\S*$/, "") + "…"; };
 // the page's first real paragraph, markdown stripped - a fuller description for the graph panel
 const firstPara = (src) => {
-  const b = (src || "").split(/\n\s*\n/).map((x) => x.trim()).find((x) => x && !/^[#>|]/.test(x) && !x.startsWith("![") && !x.startsWith("```") && !x.startsWith("- ") && !x.startsWith("* "));
+  const b = (src || "").split(/\n\s*\n/).map((x) => x.trim()).find((x) => x && !/^[#>|]/.test(x) && !x.startsWith("![") && !x.startsWith("```") && !x.startsWith("- ") && !x.startsWith("* ") && !standaloneMarkdownHref(x));
   if (!b) return "";
   const t = b.replace(/\[([^\]]+)\]\([^)]*\)/g, "$1").replace(/[*_`]/g, "").replace(/\s+/g, " ").trim();
   return t.length > 260 ? t.slice(0, 257).replace(/\s+\S*$/, "") + "…" : t;
@@ -73,6 +73,18 @@ function docSection(id) {
   const parts = id.split("/").slice(0, -1);
   if (!parts.length) return "";
   return parts[parts.length - 1]
+    .replace(/[-_]+/g, " ")
+    .replace(/\b\w/g, (c) => c.toUpperCase())
+    .replace(/\b(And|Or|Of|The)\b/g, (word) => word.toLowerCase())
+    .replace(/\bSaas\b/g, "SaaS")
+    .replace(/\bApi\b/g, "API")
+    .replace(/\bSso\b/g, "SSO");
+}
+function topLevelSection(id) {
+  if (id === "index.html" || id === "map.html") return "Home";
+  const parts = id.split("/");
+  if (parts.length < 2) return "More guides";
+  return parts[0]
     .replace(/[-_]+/g, " ")
     .replace(/\b\w/g, (c) => c.toUpperCase())
     .replace(/\b(And|Or|Of|The)\b/g, (word) => word.toLowerCase())
@@ -363,7 +375,7 @@ function authorHtml(commit) {
 }
 const commitLine = (label, commit) => commit ? `${label} ${relativeDate(commit.date)} by ${authorHtml(commit)}` : "";
 
-function pageHtml({ title, tagline, body, theme, extraCss, depth, og, canonical, isIndex, siteTitle, logo, logoDark, editUrl, updated, created, twin, themeColor, themeColorDark, hasManifest, lang, langSwitch, hreflang, nav, isHome, graphJson, outRel, comments, hasMermaid, showGeneratorAttribution, showFooterActions }) {
+function pageHtml({ title, tagline, body, theme, extraCss, depth, og, canonical, isIndex, siteTitle, logo, logoDark, editUrl, updated, created, twin, themeColor, themeColorDark, hasManifest, lang, langSwitch, hreflang, nav, isHome, graphJson, relatedPages, outRel, comments, hasMermaid, showGeneratorAttribution, showFooterActions }) {
   const prefix = "../".repeat(depth);
   const css = theme.replace(/url\("fonts\//g, `url("${prefix}fonts/`) + (extraCss || "");
   const favicon = logo;
@@ -394,19 +406,22 @@ function pageHtml({ title, tagline, body, theme, extraCss, depth, og, canonical,
   const actions = showFooterActions ? `<div class="meta-actions">${[gitLink, copy].filter(Boolean).join(" · ")}</div>` : "";
   const metaBody = actions + lines.map((line) => `<div class="meta-line">${line}</div>`).join("") + madeWith;
   const meta = metaBody ? `\n      <footer class="meta">${metaBody}</footer>` : "";
+  const graphIcon = `<svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M5.2 5.7 8 8m4.8-2.3L10 8m-1 2.2v2.3"/><circle cx="4" cy="4.5" r="2"/><circle cx="14" cy="4.5" r="2"/><circle cx="9" cy="14.5" r="2"/><circle cx="9" cy="9" r="1.7"/></svg>`;
   const graphModal = `<div class="graph-modal" hidden aria-hidden="true" role="dialog" aria-label="Knowledge graph">
       <div class="graph-bar">
-        <div class="graph-bar-left"><button type="button" class="graph-reset" hidden>← Whole graph</button><span class="graph-title">Knowledge graph</span></div>
-        <div class="graph-bar-right"><div class="graph-settings"><button type="button" class="graph-gear" aria-haspopup="true" aria-expanded="false" aria-label="Settings">Settings</button><div class="graph-menu" hidden><label class="graph-opt"><input type="checkbox" class="graph-backlinks" /> Show backlinks</label><label class="graph-opt"><input type="checkbox" class="graph-legend-toggle" /> Show legend</label></div></div><button type="button" class="graph-close" aria-label="Close knowledge graph">Close</button></div>
+        <div class="graph-bar-left"><button type="button" class="graph-back">← Back</button></div>
+        <div class="graph-bar-right"><button type="button" class="graph-overview" aria-label="Show whole graph" title="Show whole graph">${graphIcon}</button><div class="graph-settings"><button type="button" class="graph-gear" aria-haspopup="true" aria-expanded="false" aria-label="Settings">Settings</button><div class="graph-menu" hidden><label class="graph-opt"><input type="checkbox" class="graph-backlinks" /> Show backlinks</label><label class="graph-opt"><input type="checkbox" class="graph-legend-toggle" /> Show legend</label></div></div><button type="button" class="graph-close" aria-label="Close knowledge graph">Close</button></div>
       </div>
-      <canvas class="graph-canvas"></canvas>
-      <div class="graph-legend"></div>
-      <div class="graph-detail" hidden><strong class="gd-title"></strong><span class="gd-desc"></span><span class="gd-meta"></span><div class="gd-actions"><a class="gd-open" href="#">Open page →</a><button type="button" class="gd-recenter">Recenter</button></div></div>
+      <div class="graph-stage">
+        <canvas class="graph-canvas"></canvas>
+        <div class="graph-legend"></div>
+        <aside class="graph-detail" hidden><strong class="gd-title"></strong><span class="gd-desc"></span><span class="gd-meta"></span><div class="gd-actions"><a class="gd-open" href="#">Open page →</a><button type="button" class="gd-recenter">Recenter</button></div></aside>
+      </div>
     </div>
     <script type="application/json" class="site-graph-data">${(graphJson || "{}").replace(/</g, "\\u003c")}</script>`;
   // small search and graph icons that sit beside the language picker
   const searchToggle = `<button type="button" class="ds-toggle search-open" aria-label="Search" title="Search"><svg width="17" height="17" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="7" cy="7" r="4.6"/><line x1="10.6" y1="10.6" x2="14.5" y2="14.5" stroke-linecap="round"/></svg></button>`;
-  const graphToggle = `<button type="button" class="ds-toggle graph-open" aria-label="Open knowledge graph" title="Knowledge graph"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M5.2 5.7 8 8m4.8-2.3L10 8m-1 2.2v2.3"/><circle cx="4" cy="4.5" r="2"/><circle cx="14" cy="4.5" r="2"/><circle cx="9" cy="14.5" r="2"/><circle cx="9" cy="9" r="1.7"/></svg></button>`;
+  const graphToggle = `<button type="button" class="ds-toggle graph-open graph-open-overview" aria-label="Open knowledge graph" title="Knowledge graph">${graphIcon}</button>`;
   const topRight = `<div class="topbar">${searchToggle}${graphToggle}${langSwitch || ""}</div>`;
   const searchPanel = `<div class="docsearch" hidden role="search">
         <div class="ds-field">
@@ -419,11 +434,13 @@ function pageHtml({ title, tagline, body, theme, extraCss, depth, og, canonical,
         <h2>Comments</h2>
         <script src="https://giscus.app/client.js" data-repo="${esc(comments.repo)}" data-repo-id="${esc(comments.repoId)}" data-category="${esc(comments.category || "")}" data-category-id="${esc(comments.categoryId || "")}" data-mapping="${esc(comments.mapping || "pathname")}" data-strict="0" data-reactions-enabled="${comments.reactions === false ? "0" : "1"}" data-emit-metadata="0" data-input-position="${esc(comments.inputPosition || "top")}" data-theme="${esc(comments.themeUrl)}" data-lang="${esc(comments.lang || "en")}" data-loading="lazy" crossorigin="anonymous" async></script>
       </section>` : "";
-  // per-page local graph ("Around here"): this page + its neighbours, rendered with the
-  // real d3-force engine; sits above comments/footer; opens the full graph when explored.
-  const localGraph = graphJson ? `\n      <section class="localmap" aria-label="Related pages">
-        <div class="localmap-head"><h2>Related pages</h2><button type="button" class="localmap-explore graph-open">Open knowledge graph →</button></div>
-        <canvas class="localmap-canvas"></canvas>
+  const relatedGroups = (relatedPages || []).map((group) => `<section class="related-group">
+          <h3>${esc(group.label)}</h3>
+          <ul>${group.pages.map((page) => `<li><a href="${esc(prefix + page.id)}">${esc(page.title)}</a></li>`).join("")}</ul>
+        </section>`).join("");
+  const localGraph = relatedGroups ? `\n      <section class="localmap" aria-label="Related pages">
+        <div class="localmap-head"><h2>Related pages</h2><button type="button" class="localmap-explore graph-open graph-open-current">Open knowledge graph →</button></div>
+        <div class="related-grid">${relatedGroups}</div>
       </section>` : "";
   const script = `<script>
 for (const b of document.querySelectorAll(".copy-md")) b.onclick = async () => {
@@ -487,9 +504,11 @@ for (const p of document.querySelectorAll("pre.shiki")) {
   const modal = document.querySelector(".graph-modal");
   const openers = document.querySelectorAll(".graph-open");
   if (!modal || !openers.length) return;
+  const stage = modal.querySelector(".graph-stage");
   const canvas = modal.querySelector(".graph-canvas");
   const closeBtn = modal.querySelector(".graph-close");
-  const resetBtn = modal.querySelector(".graph-reset");
+  const backBtn = modal.querySelector(".graph-back");
+  const overviewBtn = modal.querySelector(".graph-overview");
   const backBox = modal.querySelector(".graph-backlinks");
   const settingsWrap = modal.querySelector(".graph-settings"), gear = modal.querySelector(".graph-gear"), gmenu = modal.querySelector(".graph-menu"), legendToggle = modal.querySelector(".graph-legend-toggle");
   const legendEl = modal.querySelector(".graph-legend");
@@ -498,6 +517,7 @@ for (const p of document.querySelectorAll("pre.shiki")) {
   const ctx = canvas.getContext("2d");
   let nodes = [], links = [], raf = 0, ready = false, loaded = false, fitDone = false, cur = null;
   let W = 0, H = 0, hover = null, selected = null, showBacklinks = false, drag = null, pan = null, moved = false, userCam = false, fitS = 1, hoverSec = null;
+  let history = [];
   const cam = { x: 0, y: 0, s: 1 };
   let camGoal = null, sim = null;
   // physics: the real d3-force engine (vendored) - same one ddw uses via react-force-graph
@@ -514,24 +534,28 @@ for (const p of document.querySelectorAll("pre.shiki")) {
   const SKEY = "folder2website-graph-settings";
   const _saved = (() => { try { return JSON.parse(localStorage.getItem(SKEY)) || {}; } catch (e) { return {}; } })();
   showBacklinks = _saved.backlinks === true;
-  let legendVisible = _saved.legend !== false;
+  let legendVisible = _saved.legend === true;
   const saveSettings = () => { try { localStorage.setItem(SKEY, JSON.stringify({ backlinks: showBacklinks, legend: legendVisible })); } catch (e) {} };
   if (backBox) backBox.checked = showBacklinks;
   if (legendToggle) legendToggle.checked = legendVisible;
   if (legendEl) legendEl.hidden = !legendVisible;
-  // colour nodes by section so clusters are legible (brand accent palette)
-  const SECTIONS = [
-    { label: "Home & map", color: "#cfe0ff", colorLight: "#5b78d6", test: (id) => id === "index.html" || id === "map.html" },
-    { label: "Features", color: "#6f8fe8", colorLight: "#3a5fd0", test: (id) => id.indexOf("features/") === 0 },
-    { label: "Host", color: "#1effa1", colorLight: "#12a06a", test: (id) => id.indexOf("users/host/") === 0 },
-    { label: "Partner", color: "#ffc2ff", colorLight: "#c060d0", test: (id) => id.indexOf("users/host-partner/") === 0 },
-    { label: "Staff", color: "#f4ff81", colorLight: "#9a8a00", test: (id) => id.indexOf("users/staff/") === 0 },
-    { label: "Participant", color: "#00ffff", colorLight: "#0a9aa6", test: (id) => id.indexOf("users/participant/") === 0 },
-    { label: "Developer (internal)", color: "#ffd166", colorLight: "#c88a00", test: (id) => id.indexOf("users/developer-internal/") === 0 },
-    { label: "Developer (external)", color: "#ff9aa2", colorLight: "#d8556a", test: (id) => id.indexOf("users/developer-external/") === 0 },
-    { label: "Guides", color: "#9db4f0", colorLight: "#5577d8", test: (id) => id.indexOf("users/") === 0 },
+  // Derive clusters from the first folder so the graph works for any documentation set.
+  const PALETTE = [
+    ["#7fa2ff", "#315fce"], ["#55d6a9", "#087d59"], ["#f4b66f", "#a45b08"],
+    ["#dc91ea", "#8c3da0"], ["#73ced9", "#177b88"], ["#f08f9a", "#ad3c4c"],
+    ["#c4d56f", "#667613"], ["#a9a0ef", "#584fc0"],
   ];
-  const sectionOf = (id) => SECTIONS.find((s) => s.test(id)) || SECTIONS[SECTIONS.length - 1];
+  const sections = [], sectionByKey = new Map();
+  const words = (value) => value.replace(/[-_]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()).replace(/\b(And|Or|Of|The)\b/g, (word) => word.toLowerCase()).replace(/\bSaas\b/g, "SaaS").replace(/\bApi\b/g, "API").replace(/\bSso\b/g, "SSO");
+  function sectionOf(id) {
+    const home = id === "index.html" || id === "map.html";
+    const parts = id.split("/");
+    const key = home ? "home" : parts.length > 1 ? parts[0] : "more";
+    if (sectionByKey.has(key)) return sectionByKey.get(key);
+    const colors = PALETTE[sections.length % PALETTE.length];
+    const section = { key, label: home ? "Home" : key === "more" ? "More guides" : words(key), color: colors[0], colorLight: colors[1], index: sections.length, x: 0, y: 0 };
+    sections.push(section); sectionByKey.set(key, section); return section;
+  }
   // canvas colours follow the generated or custom page theme
   const isDark = () => !!(window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
   const cssColor = (name, fallback) => getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
@@ -540,8 +564,7 @@ for (const p of document.querySelectorAll("pre.shiki")) {
   function buildLegend() {
     if (!legendEl) return;
     const dark = isDark();
-    const present = SECTIONS.filter((s) => nodes.some((n) => n.sec === s));
-    legendEl.innerHTML = present.map((s) => '<span class="graph-leg" data-sec="' + s.label + '"><i style="background:' + (dark ? s.color : s.colorLight) + '"></i>' + s.label + "</span>").join("");
+    legendEl.innerHTML = sections.map((s) => '<span class="graph-leg" data-sec="' + s.label + '"><i style="background:' + (dark ? s.color : s.colorLight) + '"></i>' + s.label + "</span>").join("");
   }
   function load() {
     if (loaded) return; loaded = true;
@@ -556,6 +579,8 @@ for (const p of document.querySelectorAll("pre.shiki")) {
       const seen = new Set();
       for (const e of links) { nodes[e.s].out.add(e.t); nodes[e.t].inc.add(e.s); const k = Math.min(e.s, e.t) + ":" + Math.max(e.s, e.t); e.dup = seen.has(k); seen.add(k); }
       for (const n of nodes) { const u = new Set(n.out); n.inc.forEach((x) => u.add(x)); n.deg = u.size; }
+      const clusterRadius = Math.min(220, 90 + nodes.length * 3);
+      sections.forEach((section, i) => { const angle = -Math.PI / 2 + i * 6.2832 / Math.max(1, sections.length); section.x = Math.cos(angle) * clusterRadius; section.y = Math.sin(angle) * clusterRadius; });
       buildLegend();
       cur = nodes.find((n) => n.id === CURRENT) || null;
       const D3 = window.d3;
@@ -565,6 +590,8 @@ for (const p of document.querySelectorAll("pre.shiki")) {
           .force("charge", D3.forceManyBody().strength(CHARGE))
           .force("link", D3.forceLink(linkObjs).distance(LINK_DIST))
           .force("center", D3.forceCenter(0, 0))
+          .force("sectionX", D3.forceX((n) => n.sec.x).strength(0.12))
+          .force("sectionY", D3.forceY((n) => n.sec.y).strength(0.12))
           .force("collide", D3.forceCollide().radius((n) => rad(n) + COLLIDE_PAD).strength(COLLIDE_STR))
           .stop();
       }
@@ -573,6 +600,17 @@ for (const p of document.querySelectorAll("pre.shiki")) {
   }
   // a node's neighbourhood: itself + forward links (+ backlinks when the toggle is on)
   function neighbours(f) { const s = new Set([f.i]); f.out.forEach((x) => s.add(x)); if (showBacklinks) f.inc.forEach((x) => s.add(x)); return s; }
+  // Focus mode uses a stable radial layout. It does not inherit the compressed positions
+  // from the whole-site simulation, so direct relationships remain readable.
+  function focusLayout(f) {
+    const ids = [...neighbours(f)].filter((i) => i !== f.i).sort((a, b) => {
+      const ad = f.out.has(a) ? 0 : 1, bd = f.out.has(b) ? 0 : 1;
+      return ad - bd || nodes[a].t.localeCompare(nodes[b].t);
+    });
+    const radius = 92 + Math.min(96, ids.length * 8), map = new Map([[f.i, { x: f.x, y: f.y }]]);
+    ids.forEach((id, i) => { const angle = -Math.PI / 2 + i * 6.2832 / Math.max(1, ids.length); map.set(id, { x: f.x + Math.cos(angle) * radius, y: f.y + Math.sin(angle) * radius }); });
+    return map;
+  }
   function resize() { const r = canvas.getBoundingClientRect(); W = r.width; H = r.height; const d = DPR(); canvas.width = Math.max(1, W * d); canvas.height = Math.max(1, H * d); }
   function toWorld(px, py) { return { x: (px - W / 2 - cam.x) / cam.s, y: (py - H / 2 - cam.y) / cam.s }; }
   function tick() {
@@ -583,7 +621,7 @@ for (const p of document.querySelectorAll("pre.shiki")) {
   }
   function fit() { if (!nodes.length) return; let maxR = 1; for (const n of nodes) maxR = Math.max(maxR, Math.hypot(n.x, n.y) + rad(n)); fitS = Math.max(0.25, Math.min(2, (Math.min(W, H) / 2 - 40) / maxR)); }
   // zoom that frames a node + its visible neighbourhood
-  function focusZoom(f) { const ns = neighbours(f); let maxR = 30; ns.forEach((i) => { const n = nodes[i]; maxR = Math.max(maxR, Math.hypot(n.x - f.x, n.y - f.y) + rad(n)); }); return Math.max(0.5, Math.min(2.2, (Math.min(W, H) / 2 - 70) / (maxR + 30))); }
+  function focusZoom(f) { const layout = focusLayout(f); let maxR = 30; layout.forEach((p, i) => { maxR = Math.max(maxR, Math.hypot(p.x - f.x, p.y - f.y) + rad(nodes[i])); }); return Math.max(0.5, Math.min(2.2, (Math.min(W, H) / 2 - 70) / (maxR + 30))); }
   // smooth camera: a goal (centre selected, or fit-all) that cam lerps toward each frame
   function updateCamGoal() { if (userCam) { camGoal = null; return; } if (selected) { const z = focusZoom(selected); camGoal = { s: z, x: -selected.x * z, y: -selected.y * z }; } else camGoal = { s: fitS, x: 0, y: 0 }; }
   function stepCam() { if (!camGoal) return; cam.s += (camGoal.s - cam.s) * 0.14; cam.x += (camGoal.x - cam.x) * 0.14; cam.y += (camGoal.y - cam.y) * 0.14; }
@@ -591,40 +629,52 @@ for (const p of document.querySelectorAll("pre.shiki")) {
   // Otherwise: hubs first, with a zoom-adaptive degree gate (zoomed out -> only big hubs).
   function labelOrder(f) {
     if (f) { const a = [...neighbours(f)].map((i) => nodes[i]); a.sort((x, y) => x === f ? -1 : y === f ? 1 : y.deg - x.deg); return a; }
-    const t = cam.s >= 1.15 ? 0 : cam.s >= 0.75 ? 4 : 8;
-    const a = nodes.filter((n) => n.deg >= t || n === cur).sort((x, y) => y.deg - x.deg);
-    if (cur) { const j = a.indexOf(cur); if (j > 0) { a.splice(j, 1); a.unshift(cur); } }
-    return a;
+    return [];
   }
   function draw() {
     const d = DPR(); ctx.setTransform(d, 0, 0, d, 0, 0); ctx.clearRect(0, 0, W, H);
-    const C = TH(), f = hover || selected, nset = f ? neighbours(f) : null;
+    const C = TH(), f = selected || hover, nset = f ? neighbours(f) : null;
+    const focused = !!selected, layout = focused ? focusLayout(selected) : null;
+    const pos = (n) => layout?.get(n.i) || n;
     // world space: edges + nodes
     ctx.save(); ctx.translate(W / 2 + cam.x, H / 2 + cam.y); ctx.scale(cam.s, cam.s);
     for (const e of links) {
-      if (!f && e.dup) continue; // overview: draw each undirected pair once
-      let lit = !f && !hoverSec, back = false;
+      if (!f) continue; // proximity and section clusters carry the overview
+      let lit = false, back = false;
       if (f) { if (e.s === f.i) lit = true; else if (showBacklinks && e.t === f.i && !f.out.has(e.s)) { lit = true; back = true; } }
-      ctx.strokeStyle = !lit ? C.fg + "0d" : back ? C.fg + "18" : C.fg + "26";
+      if (!lit) continue;
+      ctx.strokeStyle = back ? C.fg + "18" : C.fg + "26";
       ctx.lineWidth = (back ? 0.7 : 1) / cam.s;
-      const a = nodes[e.s], b = nodes[e.t]; ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+      const a = pos(nodes[e.s]), b = pos(nodes[e.t]); ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
     }
     for (const n of nodes) {
-      const lit = hoverSec ? n.sec.label === hoverSec : (!f || n === cur || nset.has(n.i));
+      if (focused && !nset.has(n.i)) continue;
+      const lit = hoverSec ? n.sec.label === hoverSec : (!f || nset.has(n.i));
       ctx.globalAlpha = lit ? 1 : 0.1;
       const big = n === f || n === selected || n === cur;
-      ctx.beginPath(); ctx.arc(n.x, n.y, rad(n) * (big ? 1.4 : 1), 0, 6.2832);
+      const p = pos(n);
+      ctx.beginPath(); ctx.arc(p.x, p.y, rad(n) * (big ? 1.4 : 1), 0, 6.2832);
       ctx.fillStyle = secColor(n); ctx.fill();
       if (n === f || n === selected) { ctx.lineWidth = 2 / cam.s; ctx.strokeStyle = C.fg; ctx.stroke(); }
-      if (n === cur) { ctx.beginPath(); ctx.arc(n.x, n.y, rad(n) * 1.4 + 5 / cam.s, 0, 6.2832); ctx.lineWidth = 1.5 / cam.s; ctx.strokeStyle = C.accent; ctx.stroke(); } // "you are here"
+      if (n === cur) { ctx.beginPath(); ctx.arc(p.x, p.y, rad(n) * 1.4 + 5 / cam.s, 0, 6.2832); ctx.lineWidth = 1.5 / cam.s; ctx.strokeStyle = C.accent; ctx.stroke(); } // "you are here"
     }
     ctx.globalAlpha = 1; ctx.restore();
-    // screen space: labels with greedy collision culling (skip any that would overlap)
+    // Screen space: the overview labels sections; focused and hovered nodes label one hop.
     ctx.setTransform(d, 0, 0, d, 0, 0);
+    if (!f) {
+      ctx.font = "600 13px system-ui, -apple-system, sans-serif"; ctx.textBaseline = "middle"; ctx.textAlign = "center";
+      for (const section of sections) {
+        const members = nodes.filter((n) => n.sec === section); if (!members.length) continue;
+        const sx = members.reduce((sum, n) => sum + W / 2 + cam.x + n.x * cam.s, 0) / members.length;
+        const sy = members.reduce((sum, n) => sum + H / 2 + cam.y + n.y * cam.s, 0) / members.length - 24;
+        ctx.lineWidth = 5; ctx.strokeStyle = C.bg; ctx.strokeText(section.label, sx, sy); ctx.fillStyle = C.fg; ctx.fillText(section.label, sx, sy);
+      }
+      ctx.textAlign = "start";
+    }
     ctx.font = "12px system-ui, -apple-system, sans-serif"; ctx.textBaseline = "middle";
     const placed = [];
     for (const n of labelOrder(f)) {
-      const sx = W / 2 + cam.x + n.x * cam.s, sy = H / 2 + cam.y + n.y * cam.s;
+      const p = pos(n), sx = W / 2 + cam.x + p.x * cam.s, sy = H / 2 + cam.y + p.y * cam.s;
       if (sx < 0 || sx > W || sy < 0 || sy > H) continue;
       const w = ctx.measureText(n.t).width, lx = sx + rad(n) * cam.s + 5;
       const box = { x: lx - 2, y: sy - 9, w: w + 4, h: 18 };
@@ -637,32 +687,38 @@ for (const p of document.querySelectorAll("pre.shiki")) {
     }
   }
   function loop() { if (ready) { tick(); if (!fitDone && sim && sim.alpha() < 0.25) { fit(); fitDone = true; } updateCamGoal(); stepCam(); draw(); } raf = requestAnimationFrame(loop); }
-  function pick(px, py) { const w = toWorld(px, py); let best = null, bd = Infinity; for (const n of nodes) { const dx = n.x - w.x, dy = n.y - w.y; const dd = dx * dx + dy * dy; const rr = rad(n) + 8 / cam.s; if (dd < rr * rr && dd < bd) { bd = dd; best = n; } } return best; }
-  // persistent detail panel for the node in focus (hovered preview, or the clicked selection)
+  function pick(px, py) { const w = toWorld(px, py), layout = selected ? focusLayout(selected) : null, visible = selected ? neighbours(selected) : null; let best = null, bd = Infinity; for (const n of nodes) { if (visible && !visible.has(n.i)) continue; const p = layout?.get(n.i) || n, dx = p.x - w.x, dy = p.y - w.y, dd = dx * dx + dy * dy, rr = rad(n) + 8 / cam.s; if (dd < rr * rr && dd < bd) { bd = dd; best = n; } } return best; }
+  // The detail rail represents persistent selection. Hover only previews relationships on
+  // the canvas, so the layout does not jump while the pointer moves across the overview.
   function renderDetail() {
-    const f = hover || selected;
+    const f = selected;
+    stage.classList.toggle("has-detail", !!f);
     if (!f) { detail.hidden = true; return; }
     detail.hidden = false;
     gdTitle.textContent = f.t; gdDesc.textContent = f.d || "";
     const back = f.inc.size;
     gdMeta.textContent = f.out.size + (f.out.size === 1 ? " link" : " links") + (back ? " · " + back + " backlink" + (back === 1 ? "" : "s") : "") + (f.id === CURRENT ? " · you are here" : "");
     gdOpen.href = PREFIX + f.id + (f.id !== CURRENT ? "?from=" + encodeURIComponent(CURRENT) : "");
-    gdRecenter.onclick = () => select(f);
+    gdRecenter.onclick = () => { userCam = false; updateCamGoal(); };
   }
-  function select(n) { selected = n; userCam = false; updateCamGoal(); resetBtn.hidden = !n; renderDetail(); }
-  function deselect() { selected = null; userCam = false; updateCamGoal(); resetBtn.hidden = true; renderDetail(); }
-  function close() { modal.hidden = true; modal.setAttribute("aria-hidden", "true"); document.body.classList.remove("graph-open-body"); cancelAnimationFrame(raf); raf = 0; hover = null; }
-  function open() { modal.hidden = false; modal.setAttribute("aria-hidden", "false"); document.body.classList.add("graph-open-body"); load(); resize(); if (sim) { sim.alpha(1); sim.alphaTarget(0); } fitDone = false; userCam = false; hover = null; selected = cur; resetBtn.hidden = !cur; renderDetail(); if (!raf) loop(); }
-  function openFocused(id) { open(); const n = nodes.find((x) => x.id === id); if (n) select(n); } // "back to graph" lands here
-  // opening from a page lands you in the full graph zoomed to this page (then "Whole graph" zooms out)
-  openers.forEach((b) => b.addEventListener("click", (e) => { e.preventDefault(); if (CURRENT && byId.get(CURRENT)) openFocused(CURRENT); else open(); }));
+  function applySelection(n) { selected = n || null; hover = null; userCam = false; overviewBtn.disabled = !selected; updateCamGoal(); renderDetail(); }
+  function select(n, remember = true) { if (!n || n === selected) return; if (remember) history.push(selected); applySelection(n); }
+  function showOverview(remember = true) { if (!selected) return; if (remember) history.push(selected); applySelection(null); }
+  function goBack() { if (history.length) applySelection(history.pop()); else close(); }
+  function close() { modal.hidden = true; modal.setAttribute("aria-hidden", "true"); document.body.classList.remove("graph-open-body"); cancelAnimationFrame(raf); raf = 0; hover = null; selected = null; history = []; }
+  function open() { modal.hidden = false; modal.setAttribute("aria-hidden", "false"); document.body.classList.add("graph-open-body"); load(); resize(); if (sim) { sim.alpha(1); sim.alphaTarget(0); } fitDone = false; userCam = false; hover = null; history = []; applySelection(null); if (!raf) loop(); }
+  function openFocused(id) { open(); const n = nodes.find((x) => x.id === id); if (n) applySelection(n); }
+  // Opening from a page focuses that page. Back returns to the document; the graph icon
+  // moves to the overview without pretending to be browser navigation.
+  openers.forEach((b) => b.addEventListener("click", (e) => { e.preventDefault(); if (b.classList.contains("graph-open-current") && CURRENT && byId.get(CURRENT)) openFocused(CURRENT); else open(); }));
   closeBtn.addEventListener("click", close);
-  resetBtn.addEventListener("click", deselect); // top-left "back/exit focus" - show the whole graph
+  backBtn.addEventListener("click", goBack);
+  overviewBtn.addEventListener("click", () => showOverview());
   backBox.addEventListener("change", () => { showBacklinks = backBox.checked; saveSettings(); updateCamGoal(); renderDetail(); });
   legendToggle.addEventListener("change", () => { legendVisible = legendToggle.checked; if (legendEl) legendEl.hidden = !legendVisible; saveSettings(); });
   gear.addEventListener("click", (e) => { e.stopPropagation(); const willOpen = gmenu.hidden; gmenu.hidden = !willOpen; gear.setAttribute("aria-expanded", String(willOpen)); });
   document.addEventListener("click", (e) => { if (settingsWrap && !settingsWrap.contains(e.target)) { gmenu.hidden = true; gear.setAttribute("aria-expanded", "false"); } });
-  document.addEventListener("keydown", (e) => { if (e.key !== "Escape" || modal.hidden) return; if (selected) deselect(); else close(); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !modal.hidden) goBack(); });
   addEventListener("resize", () => { if (!modal.hidden) resize(); });
   canvas.addEventListener("pointerdown", (e) => { const r = canvas.getBoundingClientRect(); moved = false; const n = pick(e.clientX - r.left, e.clientY - r.top); if (n) { drag = n; n.fx = n.x; n.fy = n.y; if (sim) { sim.alphaTarget(0.3); if (sim.alpha() < 0.3) sim.alpha(0.3); } } else pan = { x: e.clientX, y: e.clientY }; canvas.setPointerCapture(e.pointerId); });
   canvas.addEventListener("pointermove", (e) => {
@@ -673,7 +729,7 @@ for (const p of document.querySelectorAll("pre.shiki")) {
   });
   canvas.addEventListener("pointerup", () => {
     if (drag) { if (!moved) select(drag); drag.fx = null; drag.fy = null; if (sim) sim.alphaTarget(0); drag = null; }   // click node = focus + zoom (persists)
-    else if (pan) { if (!moved) deselect(); pan = null; }                                                    // click empty = clear focus
+    else if (pan) { if (!moved) showOverview(); pan = null; }
   });
   canvas.addEventListener("pointerleave", () => { hover = null; renderDetail(); });
   canvas.addEventListener("wheel", (e) => { e.preventDefault(); userCam = true; camGoal = null; cam.s = Math.max(0.3, Math.min(3, cam.s * Math.exp(-e.deltaY * 0.001))); }, { passive: false });
@@ -799,79 +855,6 @@ for (const p of document.querySelectorAll("pre.shiki")) {
   }
   addEventListener("hashchange", flash);
   if (location.hash) setTimeout(flash, 90);
-})();
-(() => {
-  // "Around here" local graph: this page + its neighbours, settled once with the real
-  // d3-force engine then drawn static (no jitter under labels). Hover lifts a node; click
-  // a neighbour to open it; click the centre / explore link to open the full graph.
-  const CURRENT = ${JSON.stringify(outRel)}, PREFIX = ${JSON.stringify(prefix)};
-  const sec = document.querySelector(".localmap"); if (!sec) return;
-  const canvas = sec.querySelector(".localmap-canvas"), explore = sec.querySelector(".localmap-explore");
-  if (!canvas || !window.d3) { sec.hidden = true; return; }
-  let g = null; try { const el = document.querySelector("script.site-graph-data"); g = el ? JSON.parse(el.textContent) : null; } catch (e) {}
-  if (!g || !g.nodes) { sec.hidden = true; return; }
-  const byId = new Map(g.nodes.map((n) => [n.id, n]));
-  const me = byId.get(CURRENT); if (!me) { sec.hidden = true; return; }
-  const seen = new Set(), pick = [];
-  const add = (id) => { if (id === CURRENT || seen.has(id) || !byId.get(id)) return; seen.add(id); pick.push(byId.get(id)); };
-  (g.links || []).forEach((l) => { if (l.s === CURRENT) add(l.t); });
-  (g.links || []).forEach((l) => { if (l.t === CURRENT) add(l.s); });
-  if (!pick.length) { sec.hidden = true; return; }
-  const picks = pick.slice(0, 10);
-  const SEC = [["index.html|map.html","#5b78d6","#cfe0ff"],["features/","#3a5fd0","#6f8fe8"],["users/host/","#12a06a","#1effa1"],["users/host-partner/","#c060d0","#ffc2ff"],["users/staff/","#9a8a00","#f4ff81"],["users/participant/","#0a9aa6","#00ffff"],["users/developer-internal/","#c88a00","#ffd166"],["users/developer-external/","#d8556a","#ff9aa2"],["users/","#5577d8","#9db4f0"]];
-  const dark = () => !!(window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
-  const col = (id) => { for (const e of SEC) { const ps = e[0].split("|"); if (ps.some((p) => p.endsWith("/") ? id.indexOf(p) === 0 : id === p)) return dark() ? e[2] : e[1]; } return dark() ? "#9db4f0" : "#5577d8"; };
-  const fg = () => getComputedStyle(document.documentElement).getPropertyValue("--fg").trim() || (dark() ? "#f6f4f1" : "#2d2d2c");
-  const short = (s) => { s = s || ""; return s.length > 22 ? s.slice(0, 21) + "…" : s; };
-  const ctx = canvas.getContext("2d");
-  const nodes = [{ id: CURRENT, t: me.t, me: true }].concat(picks.map((p) => ({ id: p.id, t: p.t })));
-  const links = picks.map((p) => ({ source: CURRENT, target: p.id }));
-  const D3 = window.d3;
-  const sim = D3.forceSimulation(nodes)
-    .force("charge", D3.forceManyBody().strength(-280))
-    .force("link", D3.forceLink(links).id((n) => n.id).distance(72).strength(0.9))
-    .force("center", D3.forceCenter(0, 0))
-    .force("collide", D3.forceCollide().radius(34))
-    .stop();
-  for (let i = 0; i < 220; i++) sim.tick();
-  let W = 0, H = 0, screen = [], hover = null;
-  function layout() {
-    const r = canvas.getBoundingClientRect(), dpr = Math.min(2, window.devicePixelRatio || 1);
-    W = r.width || 560; H = r.height || 300; canvas.width = W * dpr; canvas.height = H * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    let minX = 1e9, maxX = -1e9, minY = 1e9, maxY = -1e9;
-    nodes.forEach((n) => { minX = Math.min(minX, n.x); maxX = Math.max(maxX, n.x); minY = Math.min(minY, n.y); maxY = Math.max(maxY, n.y); });
-    const padX = 92, padY = 30;
-    const s = Math.min((W - padX * 2) / Math.max(1, maxX - minX), (H - padY * 2) / Math.max(1, maxY - minY), 1.5);
-    const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
-    screen = nodes.map((n) => ({ n: n, x: W / 2 + (n.x - cx) * s, y: H / 2 + (n.y - cy) * s, r: n.me ? 9 : 6.5 }));
-  }
-  function draw() {
-    ctx.clearRect(0, 0, W, H); const F = fg(), center = screen.find((p) => p.n.me);
-    screen.forEach((p) => { if (p.n.me) return; ctx.beginPath(); ctx.moveTo(center.x, center.y); ctx.lineTo(p.x, p.y);
-      ctx.strokeStyle = F + (hover === p.n ? "26" : "14"); ctx.lineWidth = 1; ctx.stroke(); });
-    ctx.font = '12px ' + (getComputedStyle(document.body).fontFamily || "sans-serif"); ctx.textAlign = "center";
-    screen.forEach((p) => {
-      const on = !hover || hover === p.n || p.n.me;
-      ctx.globalAlpha = on ? 1 : 0.38;
-      ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, 6.2832); ctx.fillStyle = col(p.n.id); ctx.fill();
-      if (p.n.me) { ctx.lineWidth = 2.5; ctx.strokeStyle = F; ctx.stroke(); }
-      ctx.fillStyle = F; ctx.globalAlpha = on ? 0.9 : 0.32;
-      // stagger labels away from the centre: upper nodes label above, lower nodes below
-      const above = p.y < H / 2; ctx.textBaseline = above ? "bottom" : "top";
-      ctx.fillText(short(p.n.t), p.x, above ? p.y - p.r - 6 : p.y + p.r + 6);
-      ctx.globalAlpha = 1;
-    });
-    ctx.textBaseline = "alphabetic";
-  }
-  function redraw() { layout(); draw(); }
-  redraw();
-  function at(ev) { const r = canvas.getBoundingClientRect(), x = ev.clientX - r.left, y = ev.clientY - r.top;
-    let best = null, bd = 18; screen.forEach((p) => { const d = Math.hypot(p.x - x, p.y - y); if (d < bd) { bd = d; best = p.n; } }); return best; }
-  canvas.addEventListener("pointermove", (ev) => { const h = at(ev); if (h !== hover) { hover = h; draw(); } canvas.style.cursor = h ? "pointer" : "default"; });
-  canvas.addEventListener("pointerleave", () => { if (hover) { hover = null; draw(); } });
-  canvas.addEventListener("click", (ev) => { const h = at(ev); if (h && !h.me) location.href = PREFIX + h.id; else explore.click(); });
-  let rt; window.addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(redraw, 120); });
-  if (window.matchMedia) { try { window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", draw); } catch (e) {} }
 })();
 </script>`;
   return `<!DOCTYPE html>
@@ -1073,6 +1056,21 @@ async function build(root, { serve = false } = {}) {
   }
   const graphJson = JSON.stringify({ nodes: gnodes, links: glinks });
   await write(join(outDir, "graph.json"), graphJson);
+  // Related pages remain a normal, accessible list. Explicit forward links keep their
+  // authored order; backlinks fill in additional context without duplicating entries.
+  for (const p of graphPages) {
+    const seen = new Set([p.outRel]), related = [];
+    const add = (target) => { if (!target || seen.has(target.outRel)) return; seen.add(target.outRel); related.push(target); };
+    for (const target of (p.outLinks || [])) add(byMdG.get(posix.normalize(target)));
+    for (const source of graphPages) if ((source.outLinks || new Set()).has(p.mdRel)) add(source);
+    const groups = new Map();
+    for (const target of related.slice(0, 12)) {
+      const label = topLevelSection(target.outRel);
+      if (!groups.has(label)) groups.set(label, []);
+      groups.get(label).push({ id: target.outRel, title: target.title });
+    }
+    p.relatedPages = [...groups].map(([label, groupPages]) => ({ label, pages: groupPages }));
+  }
   // search index (served via dist; MiniSearch builds from it client-side)
   const searchDocs = graphPages.map((p) => ({ id: p.outRel, t: p.title, k: docHeadings(p.src), x: docText(p.src, 5000), d: firstPara(p.src) || ogTagline(p.tagline || ""), s: docSection(p.outRel), h: docHeadingsAnchored(p.src) }));
   await write(join(outDir, "search-index.json"), JSON.stringify(searchDocs));

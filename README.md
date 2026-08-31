@@ -30,10 +30,14 @@ GITHUB_TOKEN=github_pat_... bunx github:spashii/folder2website#main owner/repo
 
 - `--out <dir>`: output directory. Default: `site`.
 - `--entry <file>`: seed page. Repeatable. Default: `README.md`.
-- `--base-url <url>`: production URL for canonical tags, sitemap, robots, OG, `llms.txt`.
-- `--manifest <path>`: manifest path. Relative paths resolve from the target repo. Default: `manifest.json`.
-- `--clone-dir <dir>`: exact clone destination for a remote repo. Existing clones are reused as-is.
-- `--hide-generator-attribution`: omit the folder2website attribution from page footers.
+- `--base-url <url>`: production URL for canonical tags, sitemap, robots,
+  OG, and `llms.txt`.
+- `--manifest <path>`: manifest path. Relative paths resolve from the target
+  repo. Default: `manifest.json`.
+- `--clone-dir <dir>`: exact clone destination for a remote repo. Existing
+  clones are reused as-is.
+- `--hide-generator-attribution`: omit the folder2website attribution from
+  page footers.
 - `--hide-footer-actions`: omit the edit and copy actions from page footers.
 - `--serve`: live preview.
 - `--port <n>`: live preview port. Default: `4321`.
@@ -43,34 +47,47 @@ GITHUB_TOKEN=github_pat_... bunx github:spashii/folder2website#main owner/repo
 - `README.md` becomes `index.html`.
 - Linked local `.md` files become `.html` pages.
 - Extensionless local text links like `LICENSE` become pages.
-- A markdown twin is written next to every page: `index.md`, `guide.md`, etc.
+- A markdown twin is written next to every page, such as `index.md` or
+  `guide.md`.
 - Referenced assets are copied.
-- With `--base-url`, `sitemap.xml`, `robots.txt`, `llms.txt`, and `llms-full.txt` are written.
+- With `--base-url`, the output includes `sitemap.xml`, `robots.txt`,
+  `llms.txt`, and `llms-full.txt`.
 
 ## Rendering
 
 - Shiki syntax highlighting.
-- Mermaid diagrams (```mermaid fences render client-side; the library ships only when a page uses one).
+- Mermaid diagrams. Mermaid fences render in the browser. The library ships
+  only when a page uses one.
 - GitHub alerts.
 - Footnotes.
 - Heading anchors.
 - Table of contents.
-- Standalone text links rendered as action buttons. Links inside sentences stay inline.
+- Standalone text links rendered as action buttons. Links inside sentences
+  stay inline.
 - Simple responsive tables with horizontal scrolling when needed.
 - Copy-code buttons.
 - Image lightbox.
 - Hover previews for internal pages.
-- Git footer with edit link, markdown copy, created/updated authors, and generator link.
+- Git footer with an edit link, Markdown copy action, authors, and generator
+  link.
 - Manifest-based title, description, icon, colors, and optional extra CSS.
 
 ## Navigate & explore
 
 - Breadcrumbs from the link graph, collapsing the middle when deep.
 - Light/dark theme that follows the OS, with an alternate dark logo.
-- Site search from a top-right icon (built on [MiniSearch](https://github.com/lucaong/minisearch)): results include matching text, support keyboard navigation, and deep-link to the matching section. The index is built into the output as `search-index.json`.
-- Knowledge graph from a top-right icon: a full-screen force-directed map of the whole site (real [d3-force](https://github.com/d3/d3-force)), with section colors, a legend, optional backlinks, and search-style focus. Backlinks are hidden by default.
-- A per-page "Related pages" graph of the current page's neighbours that opens the full graph centered on where you are.
-- Optional language switcher and giscus comments - see [`docs/manifest.md`](docs/manifest.md).
+- Site search from a top-right icon, built on
+  [MiniSearch](https://github.com/lucaong/minisearch). Results support keyboard
+  navigation and links to matching sections. The output includes the index as
+  `search-index.json`.
+- Knowledge graph from a top-right icon, built on
+  [d3-force](https://github.com/d3/d3-force). The overview groups pages by
+  section. Selecting a page shows one hop. Backlinks and the legend are hidden
+  by default.
+- A grouped "Related pages" list on each page. It can open the graph focused
+  on the current page.
+- Optional language switcher. See [`docs/manifest.md`](docs/manifest.md).
+- Optional giscus comments. See [`docs/manifest.md`](docs/manifest.md).
 
 d3-force and MiniSearch are vendored under `vendor/` (see `vendor/README.md`) and
 copied into the output, so a built site needs no third-party scripts at runtime.

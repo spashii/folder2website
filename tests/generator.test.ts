@@ -19,9 +19,15 @@ Use this guide to understand the example workflow.
 
 An [inline console link](https://app.example.com/settings) stays inline.
 
+Continue with the [related guide](guide.md).
+
 | Field | Meaning |
 | --- | --- |
 | Owner | Person responsible |
+`);
+  await Bun.write(join(fixture, "guide.md"), `# Related guide
+
+This page links [back to the example](README.md).
 `);
   await Bun.write(join(fixture, "site.webmanifest"), JSON.stringify({
     name: "Example docs",
@@ -39,11 +45,12 @@ test("renders standalone links as portable action buttons", async () => {
   expect(html.match(/class="btn action-link"/g)).toHaveLength(1);
   expect(html).toContain('<p class="tagline">Use this guide to understand the example workflow.</p>');
   expect(html).toContain('name="description" content="Use this guide to understand the example workflow."');
+  expect(html).toContain('"d":"Use this guide to understand the example workflow.');
 });
 
 test("keeps tables simple and keyboard-scrollable", async () => {
   const html = await Bun.file(join(regularOut, "index.html")).text();
-  expect(html).toContain("--width: 786px");
+  expect(html).toContain("--width: 600px");
   expect(html).toContain('<div class="table-wrap" tabindex="0"><table>');
   expect(html).toContain("border-bottom: 1px solid color-mix");
   expect(html).not.toContain("border-right: 1px solid var(--line)");
@@ -61,7 +68,29 @@ test("supports explicit footer opt-outs", async () => {
 test("uses quiet graph defaults", async () => {
   const html = await Bun.file(join(regularOut, "index.html")).text();
   expect(html).toContain('showBacklinks = _saved.backlinks === true');
-  expect(html).toContain('C.fg + "0d" : back ? C.fg + "18" : C.fg + "26"');
-  expect(html).toContain('F + (hover === p.n ? "26" : "14")');
+  expect(html).toContain('legendVisible = _saved.legend === true');
+  expect(html).toContain('if (!f) continue; // proximity and section clusters carry the overview');
+  expect(html).toContain('if (focused && !nset.has(n.i)) continue');
+  expect(html).toContain('function focusLayout(f)');
+  expect(html).toContain('function sectionOf(id)');
   expect(html).toContain('const SKEY = "folder2website-graph-settings"');
+});
+
+test("keeps related pages textual and graph navigation consistent", async () => {
+  const html = await Bun.file(join(regularOut, "index.html")).text();
+  expect(html).toContain('<div class="related-grid">');
+  expect(html).toContain('<a href="guide.html">Related guide</a>');
+  expect(html).not.toContain("localmap-canvas");
+  expect(html).toContain('<button type="button" class="graph-back">← Back</button>');
+  expect(html).toContain('class="graph-overview" aria-label="Show whole graph"');
+  expect(html).toContain('class="ds-toggle graph-open graph-open-overview"');
+  expect(html).toContain('class="localmap-explore graph-open graph-open-current"');
+  expect(html).not.toContain("← Whole graph");
+});
+
+test("reserves laptop space for graph details", async () => {
+  const html = await Bun.file(join(regularOut, "index.html")).text();
+  expect(html).toContain('<div class="graph-stage">');
+  expect(html).toContain(".graph-stage.has-detail { grid-template-columns: minmax(0, 1fr) 320px; }");
+  expect(html).toContain('stage.classList.toggle("has-detail", !!f)');
 });
