@@ -312,7 +312,7 @@ body.graph-open-body { overflow: hidden; }
 .ds-hit { display: block; padding: 10px 14px; text-decoration: none; color: var(--fg);
   border-bottom: 1px solid color-mix(in srgb, var(--fg) 8%, transparent); }
 .ds-hit:last-child { border-bottom: 0; }
-.ds-hit:hover, .ds-hit:focus { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.ds-hit:hover, .ds-hit:focus, .ds-hit[aria-selected="true"] { background: color-mix(in srgb, var(--accent) 12%, transparent); }
 .ds-top { display: flex; align-items: baseline; gap: 9px; }
 .ds-top strong { font-weight: 600; }
 .ds-sec { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; opacity: .55; }

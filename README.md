@@ -63,9 +63,9 @@ GITHUB_TOKEN=github_pat_... bunx github:spashii/folder2website#main owner/repo
 
 - Breadcrumbs from the link graph, collapsing the middle when deep.
 - Light/dark theme that follows the OS, with an alternate dark logo.
-- Site search from a top-right icon (built on [MiniSearch](https://github.com/lucaong/minisearch)): results drop in a popover and deep-link to the matching section. The index is built into the output as `search-index.json`.
-- Explore graph: a full-screen force-directed map of the whole site (real [d3-force](https://github.com/d3/d3-force)), with section colors, a legend, backlinks, and search-style focus.
-- A per-page "Related" graph of the current page's neighbours that opens the full graph centered on where you are.
+- Site search from a top-right icon (built on [MiniSearch](https://github.com/lucaong/minisearch)): results include matching text, support keyboard navigation, and deep-link to the matching section. The index is built into the output as `search-index.json`.
+- Knowledge graph from a top-right icon: a full-screen force-directed map of the whole site (real [d3-force](https://github.com/d3/d3-force)), with section colors, a legend, backlinks, and search-style focus.
+- A per-page "Related pages" graph of the current page's neighbours that opens the full graph centered on where you are.
 - Optional language switcher and giscus comments - see [`docs/manifest.md`](docs/manifest.md).
 
 d3-force and MiniSearch are vendored under `vendor/` (see `vendor/README.md`) and

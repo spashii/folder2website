@@ -68,15 +68,15 @@ const firstPara = (src) => {
 // --- search index helpers ---
 function docSection(id) {
   if (id === "index.html" || id === "map.html") return "Home";
-  if (id.indexOf("features/") === 0) return "Features";
-  if (id.indexOf("users/host/") === 0) return "Host";
-  if (id.indexOf("users/host-partner/") === 0) return "Partner";
-  if (id.indexOf("users/staff/") === 0) return "Staff";
-  if (id.indexOf("users/participant/") === 0) return "Participant";
-  if (id.indexOf("users/developer-internal/") === 0) return "Developer (internal)";
-  if (id.indexOf("users/developer-external/") === 0) return "Developer (external)";
-  if (id.indexOf("users/") === 0) return "Guides";
-  return "";
+  const parts = id.split("/").slice(0, -1);
+  if (!parts.length) return "";
+  return parts[parts.length - 1]
+    .replace(/[-_]+/g, " ")
+    .replace(/\b\w/g, (c) => c.toUpperCase())
+    .replace(/\b(And|Or|Of|The)\b/g, (word) => word.toLowerCase())
+    .replace(/\bSaas\b/g, "SaaS")
+    .replace(/\bApi\b/g, "API")
+    .replace(/\bSso\b/g, "SSO");
 }
 function docHeadings(src) {
   const hs = [];
@@ -370,27 +370,28 @@ function pageHtml({ title, tagline, body, theme, extraCss, depth, og, canonical,
   const madeWith = showGeneratorAttribution
     ? `<div class="meta-line">Website made with <a href="https://github.com/spashii/folder2website" data-popover-title="spashii/folder2website" data-popover-description="Point it at a repo or any markdown folder, get a clean website.">spashii/folder2website</a></div>`
     : "";
-  // search lives in the top-right icon; the graph in the per-page "Related" map - not the footer
+  // Search and the knowledge graph live in the top-right controls, not the footer.
   const meta = `\n      <footer class="meta"><div class="meta-actions">${[gitLink, copy].filter(Boolean).join(" · ")}</div>${lines.map((line) => `<div class="meta-line">${line}</div>`).join("")}${madeWith}</footer>`;
-  const graphModal = `<div class="graph-modal" hidden aria-hidden="true" role="dialog" aria-label="Explore graph">
+  const graphModal = `<div class="graph-modal" hidden aria-hidden="true" role="dialog" aria-label="Knowledge graph">
       <div class="graph-bar">
-        <div class="graph-bar-left"><button type="button" class="graph-reset" hidden>← Whole graph</button><span class="graph-title">Explore graph</span></div>
-        <div class="graph-bar-right"><div class="graph-settings"><button type="button" class="graph-gear" aria-haspopup="true" aria-expanded="false" aria-label="Settings">Settings</button><div class="graph-menu" hidden><label class="graph-opt"><input type="checkbox" class="graph-backlinks" /> Show backlinks</label><label class="graph-opt"><input type="checkbox" class="graph-legend-toggle" /> Show legend</label></div></div><button type="button" class="graph-close" aria-label="Close explore graph">Close</button></div>
+        <div class="graph-bar-left"><button type="button" class="graph-reset" hidden>← Whole graph</button><span class="graph-title">Knowledge graph</span></div>
+        <div class="graph-bar-right"><div class="graph-settings"><button type="button" class="graph-gear" aria-haspopup="true" aria-expanded="false" aria-label="Settings">Settings</button><div class="graph-menu" hidden><label class="graph-opt"><input type="checkbox" class="graph-backlinks" /> Show backlinks</label><label class="graph-opt"><input type="checkbox" class="graph-legend-toggle" /> Show legend</label></div></div><button type="button" class="graph-close" aria-label="Close knowledge graph">Close</button></div>
       </div>
       <canvas class="graph-canvas"></canvas>
       <div class="graph-legend"></div>
       <div class="graph-detail" hidden><strong class="gd-title"></strong><span class="gd-desc"></span><span class="gd-meta"></span><div class="gd-actions"><a class="gd-open" href="#">Open page →</a><button type="button" class="gd-recenter">Recenter</button></div></div>
     </div>
     <script type="application/json" class="site-graph-data">${(graphJson || "{}").replace(/</g, "\\u003c")}</script>`;
-  // small search icon that sits beside the language picker; opens a popover panel
+  // small search and graph icons that sit beside the language picker
   const searchToggle = `<button type="button" class="ds-toggle search-open" aria-label="Search" title="Search"><svg width="17" height="17" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="7" cy="7" r="4.6"/><line x1="10.6" y1="10.6" x2="14.5" y2="14.5" stroke-linecap="round"/></svg></button>`;
-  const topRight = `<div class="topbar">${searchToggle}${langSwitch || ""}</div>`;
+  const graphToggle = `<button type="button" class="ds-toggle graph-open" aria-label="Open knowledge graph" title="Knowledge graph"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M5.2 5.7 8 8m4.8-2.3L10 8m-1 2.2v2.3"/><circle cx="4" cy="4.5" r="2"/><circle cx="14" cy="4.5" r="2"/><circle cx="9" cy="14.5" r="2"/><circle cx="9" cy="9" r="1.7"/></svg></button>`;
+  const topRight = `<div class="topbar">${searchToggle}${graphToggle}${langSwitch || ""}</div>`;
   const searchPanel = `<div class="docsearch" hidden role="search">
         <div class="ds-field">
           <span class="ds-ic" aria-hidden="true"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="7" cy="7" r="4.6"/><line x1="10.6" y1="10.6" x2="14.5" y2="14.5" stroke-linecap="round"/></svg></span>
-          <input type="search" class="ds-input" placeholder="Search the docs…" aria-label="Search the docs" autocomplete="off" spellcheck="false" />
+          <input type="search" class="ds-input" placeholder="Search the docs…" aria-label="Search the docs" aria-controls="docsearch-results" aria-expanded="false" aria-keyshortcuts="/ Control+K Meta+K" autocomplete="off" spellcheck="false" />
         </div>
-        <div class="ds-results" hidden></div>
+        <div class="ds-results" id="docsearch-results" role="listbox" aria-label="Search results" hidden></div>
       </div>`;
   const commentsHtml = comments ? `\n      <section class="comments" aria-label="Comments">
         <h2>Comments</h2>
@@ -399,7 +400,7 @@ function pageHtml({ title, tagline, body, theme, extraCss, depth, og, canonical,
   // per-page local graph ("Around here"): this page + its neighbours, rendered with the
   // real d3-force engine; sits above comments/footer; opens the full graph when explored.
   const localGraph = graphJson ? `\n      <section class="localmap" aria-label="Related pages">
-        <div class="localmap-head"><h2>Related</h2><button type="button" class="localmap-explore graph-open">Explore the full graph →</button></div>
+        <div class="localmap-head"><h2>Related pages</h2><button type="button" class="localmap-explore graph-open">Open knowledge graph →</button></div>
         <canvas class="localmap-canvas"></canvas>
       </section>` : "";
   const script = `<script>
@@ -490,7 +491,7 @@ for (const p of document.querySelectorAll("pre.shiki")) {
   // persisted graph settings (backlinks, legend visibility) via localStorage
   const SKEY = "dembrane-graph-settings";
   const _saved = (() => { try { return JSON.parse(localStorage.getItem(SKEY)) || {}; } catch (e) { return {}; } })();
-  showBacklinks = !!_saved.backlinks;
+  showBacklinks = _saved.backlinks !== false;
   let legendVisible = _saved.legend !== false;
   const saveSettings = () => { try { localStorage.setItem(SKEY, JSON.stringify({ backlinks: showBacklinks, legend: legendVisible })); } catch (e) {} };
   if (backBox) backBox.checked = showBacklinks;
@@ -509,9 +510,10 @@ for (const p of document.querySelectorAll("pre.shiki")) {
     { label: "Guides", color: "#9db4f0", colorLight: "#5577d8", test: (id) => id.indexOf("users/") === 0 },
   ];
   const sectionOf = (id) => SECTIONS.find((s) => s.test(id)) || SECTIONS[SECTIONS.length - 1];
-  // canvas colours follow the page theme (light parchment / dark graphite)
+  // canvas colours follow the generated or custom page theme
   const isDark = () => !!(window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
-  const TH = () => isDark() ? { dark: true, bg: "#2d2d2c", fg: "#f6f4f1", accent: "#9db4f0" } : { dark: false, bg: "#f6f4f1", fg: "#2d2d2c", accent: "#4169e1" };
+  const cssColor = (name, fallback) => getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
+  const TH = () => ({ dark: isDark(), bg: cssColor("--bg", "#ffffff"), fg: cssColor("--fg", "#1f2328"), accent: cssColor("--accent", "#0969da") });
   const secColor = (n) => isDark() ? n.sec.color : n.sec.colorLight;
   function buildLegend() {
     if (!legendEl) return;
@@ -669,15 +671,14 @@ for (const p of document.querySelectorAll("pre.shiki")) {
   })();
 })();
 (() => {
-  // inline site search: a subtle field near the top; results drop in below it (no modal,
-  // no arrow-key selection). Each hit deep-links to the heading that best matches the query.
+  // Inline site search. Each hit deep-links to the heading that best matches the query.
   const PREFIX = ${JSON.stringify(prefix)}, CURRENT = ${JSON.stringify(outRel)};
   const box = document.querySelector(".docsearch");
   if (!box) return;
   const input = box.querySelector(".ds-input"), results = box.querySelector(".ds-results");
   const openers = document.querySelectorAll(".search-open");
-  let mini = null, loaded = false, hop = {};
-  const esc = (s) => (s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  let mini = null, loaded = false, hop = {}, active = -1, hitEls = [];
+  const esc = (s) => (s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
   function computeHop() {
     try {
       const el = document.querySelector("script.site-graph-data"); const g = el ? JSON.parse(el.textContent) : null; if (!g) return;
@@ -687,14 +688,25 @@ for (const p of document.querySelectorAll("pre.shiki")) {
       while (q.length) { const u = q.shift(); (adj[u] || []).forEach((v) => { if (hop[v] == null) { hop[v] = hop[u] + 1; q.push(v); } }); }
     } catch (e) {}
   }
-  function show(html) { results.innerHTML = html; results.hidden = false; }
-  function hide() { results.hidden = true; }
+  function show(html) {
+    results.innerHTML = html; results.hidden = false; input.setAttribute("aria-expanded", "true");
+    active = -1; hitEls = [...results.querySelectorAll(".ds-hit")];
+    hitEls.forEach((el, i) => el.addEventListener("pointermove", () => activate(i)));
+  }
+  function hide() { results.hidden = true; input.setAttribute("aria-expanded", "false"); input.removeAttribute("aria-activedescendant"); active = -1; hitEls = []; }
+  function activate(i) {
+    if (!hitEls.length) return;
+    active = (i + hitEls.length) % hitEls.length;
+    hitEls.forEach((el, n) => el.setAttribute("aria-selected", n === active ? "true" : "false"));
+    input.setAttribute("aria-activedescendant", hitEls[active].id);
+    hitEls[active].scrollIntoView({ block: "nearest" });
+  }
   async function ensure() {
     if (loaded) return; loaded = true; computeHop();
     try {
       const docs = await (await fetch(PREFIX + "search-index.json")).json();
       const MS = window.MiniSearch;
-      mini = new MS({ fields: ["t", "k", "x"], storeFields: ["t", "d", "s", "id", "h"], searchOptions: { boost: { t: 5, k: 3, x: 1 }, prefix: true, fuzzy: 0.2, combineWith: "AND" } });
+      mini = new MS({ fields: ["t", "k", "x"], storeFields: ["t", "d", "s", "id", "h", "x"], searchOptions: { boost: { t: 5, k: 3, x: 1 }, prefix: true, fuzzy: 0.2, combineWith: "AND" } });
       mini.addAll(docs);
     } catch (e) { show('<div class="ds-empty">Search works on the published site.</div>'); }
   }
@@ -705,21 +717,35 @@ for (const p of document.querySelectorAll("pre.shiki")) {
     r.h.forEach((hd) => { const lt = (hd.t || "").toLowerCase(); let n = 0; terms.forEach((t) => { if (t && lt.indexOf(t) >= 0) n++; }); if (n > bestN) { bestN = n; best = hd; } });
     return bestN > 0 ? best : null;
   }
+  function snippet(r, terms) {
+    const text = (r.x || r.d || "").replace(/\s+/g, " ").trim();
+    if (!text) return "";
+    const lower = text.toLowerCase();
+    let at = -1;
+    terms.forEach((term) => { const i = lower.indexOf(term); if (i >= 0 && (at < 0 || i < at)) at = i; });
+    if (at < 0) return text.length > 150 ? text.slice(0, 147).replace(/\s+\S*$/, "") + "…" : text;
+    let start = Math.max(0, at - 55), end = Math.min(text.length, at + 115);
+    if (start) start = text.indexOf(" ", start) + 1;
+    if (end < text.length) { const space = text.lastIndexOf(" ", end); if (space > start) end = space; }
+    return (start ? "…" : "") + text.slice(start, end) + (end < text.length ? "…" : "");
+  }
   function run(q) {
     q = (q || "").trim();
     if (!mini || !q) { results.innerHTML = ""; hide(); return; }
     const terms = q.toLowerCase().split(/\s+/).filter(Boolean);
-    const r = mini.search(q);
+    let r = mini.search(q);
+    if (!r.length && terms.length > 1) r = mini.search(q, { combineWith: "OR" });
     r.forEach((x) => { const h = hop[x.id]; x._rank = x.score - (h != null ? Math.min(h, 6) * x.score * 0.04 : 0); }); // relevance dominates; nearer pages edge ahead
     r.sort((a, b) => b._rank - a._rank);
     const hits = r.slice(0, 10);
-    if (!hits.length) { show('<div class="ds-empty">No matches for “' + esc(q) + '”.</div>'); return; }
-    show(hits.map((x) => {
+    if (!hits.length) { show('<div class="ds-empty">No matches for “' + esc(q) + '”. Try fewer or more general words.</div>'); return; }
+    show(hits.map((x, i) => {
       const hd = bestHeading(x, terms);
       const href = PREFIX + esc(x.id) + (hd ? "#" + esc(hd.a) : "");
-      return '<a class="ds-hit" href="' + href + '"><span class="ds-top"><strong>' + esc(x.t) + "</strong>"
+      return '<a class="ds-hit" id="docsearch-hit-' + i + '" data-hit-index="' + i + '" role="option" aria-selected="false" href="' + href + '"><span class="ds-top"><strong>' + esc(x.t) + "</strong>"
         + (x.s ? '<span class="ds-sec">' + esc(x.s) + "</span>" : "") + "</span>"
-        + (hd ? '<span class="ds-where">→ ' + esc(hd.t) + "</span>" : '<span class="ds-desc">' + esc(x.d || "") + "</span>")
+        + (hd ? '<span class="ds-where">→ ' + esc(hd.t) + "</span>" : "")
+        + '<span class="ds-desc">' + esc(snippet(x, terms)) + "</span>"
         + "</a>";
     }).join(""));
   }
@@ -727,7 +753,12 @@ for (const p of document.querySelectorAll("pre.shiki")) {
   function closePanel() { box.hidden = true; hide(); }
   openers.forEach((b) => b.addEventListener("click", (e) => { e.preventDefault(); box.hidden ? openPanel() : closePanel(); }));
   input.addEventListener("input", () => { if (loaded) run(input.value); else ensure().then(() => run(input.value)); });
-  input.addEventListener("keydown", (e) => { if (e.key === "Escape") closePanel(); });
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") { closePanel(); return; }
+    if (e.key === "ArrowDown" && hitEls.length) { e.preventDefault(); activate(active + 1); }
+    if (e.key === "ArrowUp" && hitEls.length) { e.preventDefault(); activate(active < 0 ? hitEls.length - 1 : active - 1); }
+    if (e.key === "Enter" && active >= 0 && hitEls[active]) { e.preventDefault(); hitEls[active].click(); }
+  });
   document.addEventListener("click", (e) => { if (box.hidden || box.contains(e.target) || (e.target.closest && e.target.closest(".search-open"))) return; closePanel(); });
   document.addEventListener("keydown", (e) => {
     const t = e.target, tag = t && t.tagName;
@@ -768,7 +799,7 @@ for (const p of document.querySelectorAll("pre.shiki")) {
   const SEC = [["index.html|map.html","#5b78d6","#cfe0ff"],["features/","#3a5fd0","#6f8fe8"],["users/host/","#12a06a","#1effa1"],["users/host-partner/","#c060d0","#ffc2ff"],["users/staff/","#9a8a00","#f4ff81"],["users/participant/","#0a9aa6","#00ffff"],["users/developer-internal/","#c88a00","#ffd166"],["users/developer-external/","#d8556a","#ff9aa2"],["users/","#5577d8","#9db4f0"]];
   const dark = () => !!(window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
   const col = (id) => { for (const e of SEC) { const ps = e[0].split("|"); if (ps.some((p) => p.endsWith("/") ? id.indexOf(p) === 0 : id === p)) return dark() ? e[2] : e[1]; } return dark() ? "#9db4f0" : "#5577d8"; };
-  const fg = () => dark() ? "#f6f4f1" : "#2d2d2c";
+  const fg = () => getComputedStyle(document.documentElement).getPropertyValue("--fg").trim() || (dark() ? "#f6f4f1" : "#2d2d2c");
   const short = (s) => { s = s || ""; return s.length > 22 ? s.slice(0, 21) + "…" : s; };
   const ctx = canvas.getContext("2d");
   const nodes = [{ id: CURRENT, t: me.t, me: true }].concat(picks.map((p) => ({ id: p.id, t: p.t })));
@@ -1021,7 +1052,7 @@ async function build(root, { serve = false } = {}) {
   const graphJson = JSON.stringify({ nodes: gnodes, links: glinks });
   await write(join(outDir, "graph.json"), graphJson);
   // search index (served via dist; MiniSearch builds from it client-side)
-  const searchDocs = graphPages.map((p) => ({ id: p.outRel, t: p.title, k: docHeadings(p.src), x: docText(p.src, 700), d: firstPara(p.src) || ogTagline(p.tagline || ""), s: docSection(p.outRel), h: docHeadingsAnchored(p.src) }));
+  const searchDocs = graphPages.map((p) => ({ id: p.outRel, t: p.title, k: docHeadings(p.src), x: docText(p.src, 5000), d: firstPara(p.src) || ogTagline(p.tagline || ""), s: docSection(p.outRel), h: docHeadingsAnchored(p.src) }));
   await write(join(outDir, "search-index.json"), JSON.stringify(searchDocs));
 
   // giscus comments: opt-in via manifest.readme_site.comments; theme auto-derived from brand colours
