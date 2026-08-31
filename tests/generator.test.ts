@@ -43,6 +43,7 @@ test("renders standalone links as portable action buttons", async () => {
 
 test("keeps tables simple and keyboard-scrollable", async () => {
   const html = await Bun.file(join(regularOut, "index.html")).text();
+  expect(html).toContain("--width: 786px");
   expect(html).toContain('<div class="table-wrap" tabindex="0"><table>');
   expect(html).toContain("border-bottom: 1px solid color-mix");
   expect(html).not.toContain("border-right: 1px solid var(--line)");
