@@ -4,7 +4,8 @@
 // self-contained static site. Bun-native. No config, no frontmatter.
 //
 //   folder2website <path-or-repo> [--out <dir>] [--token <T>] [--entry f.md ...]
-//                                 [--base-url https://...] [--manifest <path>] [--clone-dir <dir>] [--port 4321] [--serve]
+//                                 [--base-url https://...] [--manifest <path>] [--clone-dir <dir>]
+//                                 [--hide-generator-attribution] [--port 4321] [--serve]
 //
 // ponytail: a small script, not a framework. Want search/sidebar/versioning?
 // reach for VitePress instead of growing this.
@@ -21,7 +22,7 @@ import { tmpdir } from "node:os";
 import { makeOgPng } from "./og.ts";
 
 const argv = process.argv.slice(2);
-const usage = "usage: folder2website <path-or-repo> [--out <dir>] [--token <T>] [--entry f.md ...] [--base-url <url>] [--manifest <path>] [--clone-dir <dir>] [--port <n>] [--serve]";
+const usage = "usage: folder2website <path-or-repo> [--out <dir>] [--token <T>] [--entry f.md ...] [--base-url <url>] [--manifest <path>] [--clone-dir <dir>] [--hide-generator-attribution] [--port <n>] [--serve]";
 if (argv.includes("-h") || argv.includes("--help")) {
   console.log(usage);
   process.exit(0);
@@ -38,6 +39,7 @@ const outDir = resolve(flag("--out") ?? "site");
 const baseUrl = flag("--base-url")?.replace(/\/$/, "");
 const manifestArg = flag("--manifest");
 const clonePath = flag("--clone-dir") ? resolve(flag("--clone-dir")) : null;
+const showGeneratorAttribution = !argv.includes("--hide-generator-attribution");
 const port = Number(flag("--port") ?? 4321);
 if (!Number.isInteger(port) || port < 1 || port > 65535) {
   console.error("--port must be an integer from 1 to 65535");
@@ -341,7 +343,7 @@ function authorHtml(commit) {
 }
 const commitLine = (label, commit) => commit ? `${label} ${relativeDate(commit.date)} by ${authorHtml(commit)}` : "";
 
-function pageHtml({ title, tagline, body, theme, extraCss, depth, og, canonical, isIndex, siteTitle, logo, logoDark, editUrl, updated, created, twin, themeColor, themeColorDark, hasManifest, lang, langSwitch, hreflang, nav, isHome, graphJson, outRel, comments, hasMermaid }) {
+function pageHtml({ title, tagline, body, theme, extraCss, depth, og, canonical, isIndex, siteTitle, logo, logoDark, editUrl, updated, created, twin, themeColor, themeColorDark, hasManifest, lang, langSwitch, hreflang, nav, isHome, graphJson, outRel, comments, hasMermaid, showGeneratorAttribution }) {
   const prefix = "../".repeat(depth);
   const css = theme.replace(/url\("fonts\//g, `url("${prefix}fonts/`) + (extraCss || "");
   const favicon = logo;
@@ -365,9 +367,11 @@ function pageHtml({ title, tagline, body, theme, extraCss, depth, og, canonical,
   const copy = `<button class="linkish copy-md" data-md="${esc(twin)}">Copy as Markdown</button>`;
   const sameCommit = updated?.hash && created?.hash && updated.hash === created.hash;
   const lines = [sameCommit ? "" : commitLine("Updated", updated), commitLine("Created", created)].filter(Boolean);
-  const madeWith = `Website made with <a href="https://github.com/spashii/folder2website" data-popover-title="spashii/folder2website" data-popover-description="Point it at a repo or any markdown folder, get a clean website.">spashii/folder2website</a>`;
+  const madeWith = showGeneratorAttribution
+    ? `<div class="meta-line">Website made with <a href="https://github.com/spashii/folder2website" data-popover-title="spashii/folder2website" data-popover-description="Point it at a repo or any markdown folder, get a clean website.">spashii/folder2website</a></div>`
+    : "";
   // search lives in the top-right icon; the graph in the per-page "Related" map - not the footer
-  const meta = `\n      <footer class="meta"><div class="meta-actions">${[gitLink, copy].filter(Boolean).join(" · ")}</div>${lines.map((line) => `<div class="meta-line">${line}</div>`).join("")}<div class="meta-line">${madeWith}</div></footer>`;
+  const meta = `\n      <footer class="meta"><div class="meta-actions">${[gitLink, copy].filter(Boolean).join(" · ")}</div>${lines.map((line) => `<div class="meta-line">${line}</div>`).join("")}${madeWith}</footer>`;
   const graphModal = `<div class="graph-modal" hidden aria-hidden="true" role="dialog" aria-label="Explore graph">
       <div class="graph-bar">
         <div class="graph-bar-left"><button type="button" class="graph-reset" hidden>← Whole graph</button><span class="graph-title">Explore graph</span></div>
@@ -1043,7 +1047,7 @@ async function build(root, { serve = false } = {}) {
   }
 
   for (const pg of pages) {
-    await write(join(outDir, pg.outRel), pageHtml({ ...pg, theme, extraCss: override, siteTitle, themeColor: manifest?.background_color, themeColorDark: ext.dark?.bg, hasManifest: !!manifest, lang: pg.locale, langSwitch: switcherFor(pg), hreflang: hreflangFor(pg), nav: crumbsFor(pg), isHome: pg.outRel === localeHome[pg.locale], graphJson, comments: commentsOut }));
+    await write(join(outDir, pg.outRel), pageHtml({ ...pg, theme, extraCss: override, siteTitle, themeColor: manifest?.background_color, themeColorDark: ext.dark?.bg, hasManifest: !!manifest, lang: pg.locale, langSwitch: switcherFor(pg), hreflang: hreflangFor(pg), nav: crumbsFor(pg), isHome: pg.outRel === localeHome[pg.locale], graphJson, comments: commentsOut, showGeneratorAttribution }));
     await write(join(outDir, pg.twinRel), pg.src.replace(/(\]\([^)]*?)README\.md/gi, "$1index.md"));
   }
   let copied = 0;

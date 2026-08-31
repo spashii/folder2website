@@ -16,6 +16,7 @@ bunx github:spashii/folder2website#main . --serve
 bunx github:spashii/folder2website#main . --serve --port 4322
 bunx github:spashii/folder2website#main . --base-url https://example.com
 bunx github:spashii/folder2website#main . --manifest docs/site.webmanifest
+bunx github:spashii/folder2website#main . --hide-generator-attribution
 ```
 
 Private repo:
@@ -31,6 +32,7 @@ GITHUB_TOKEN=github_pat_... bunx github:spashii/folder2website#main owner/repo
 - `--base-url <url>`: production URL for canonical tags, sitemap, robots, OG, `llms.txt`.
 - `--manifest <path>`: manifest path. Relative paths resolve from the target repo. Default: `manifest.json`.
 - `--clone-dir <dir>`: exact clone destination for a remote repo. Existing clones are reused as-is.
+- `--hide-generator-attribution`: omit the folder2website attribution from page footers.
 - `--serve`: live preview.
 - `--port <n>`: live preview port. Default: `4321`.
 
