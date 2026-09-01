@@ -79,6 +79,8 @@ function docSection(id) {
     .replace(/\b(And|Or|Of|The)\b/g, (word) => word.toLowerCase())
     .replace(/\bSaas\b/g, "SaaS")
     .replace(/\bApi\b/g, "API")
+    .replace(/\bAi\b/g, "AI")
+    .replace(/\bIt\b/g, "IT")
     .replace(/\bSso\b/g, "SSO");
 }
 function topLevelSection(id) {
@@ -91,6 +93,8 @@ function topLevelSection(id) {
     .replace(/\b(And|Or|Of|The)\b/g, (word) => word.toLowerCase())
     .replace(/\bSaas\b/g, "SaaS")
     .replace(/\bApi\b/g, "API")
+    .replace(/\bAi\b/g, "AI")
+    .replace(/\bIt\b/g, "IT")
     .replace(/\bSso\b/g, "SSO");
 }
 function docHeadings(src) {
@@ -534,7 +538,7 @@ for (const p of document.querySelectorAll("pre.shiki")) {
   if (backBox) backBox.checked = showBacklinks;
   // Derive clusters from the first folder so the graph works for any documentation set.
   const sections = [], sectionByKey = new Map();
-  const words = (value) => value.replace(/[-_]+/g, " ").replace(/\\b\\w/g, (c) => c.toUpperCase()).replace(/\\b(And|Or|Of|The)\\b/g, (word) => word.toLowerCase()).replace(/\\bSaas\\b/g, "SaaS").replace(/\\bApi\\b/g, "API").replace(/\\bSso\\b/g, "SSO");
+  const words = (value) => value.replace(/[-_]+/g, " ").replace(/\\b\\w/g, (c) => c.toUpperCase()).replace(/\\b(And|Or|Of|The)\\b/g, (word) => word.toLowerCase()).replace(/\\bSaas\\b/g, "SaaS").replace(/\\bApi\\b/g, "API").replace(/\\bAi\\b/g, "AI").replace(/\\bIt\\b/g, "IT").replace(/\\bSso\\b/g, "SSO");
   function sectionOf(id) {
     const home = id === "index.html" || id === "map.html";
     const parts = id.split("/");

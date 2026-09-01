@@ -87,6 +87,7 @@ test("uses quiet graph defaults", async () => {
   expect(html).toContain('ctx.font = "500 14px " + fontFamily');
   expect(html).toContain('new ResizeObserver');
   expect(html).toContain('replace(/\\b\\w/g');
+  expect(html).toContain('replace(/\\bIt\\b/g, "IT")');
   expect(html).toContain('.split(/\\s+/).filter(Boolean)');
   expect(html).not.toContain('.split(/s+/).filter(Boolean)');
   expect(html).not.toContain("const PALETTE");
