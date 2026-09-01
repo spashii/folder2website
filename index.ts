@@ -408,21 +408,20 @@ function pageHtml({ title, tagline, body, theme, extraCss, depth, og, canonical,
   const metaBody = actions + lines.map((line) => `<div class="meta-line">${line}</div>`).join("") + madeWith;
   const meta = metaBody ? `\n      <footer class="meta">${metaBody}</footer>` : "";
   const graphIcon = `<svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M5.2 5.7 8 8m4.8-2.3L10 8m-1 2.2v2.3"/><circle cx="4" cy="4.5" r="2"/><circle cx="14" cy="4.5" r="2"/><circle cx="9" cy="14.5" r="2"/><circle cx="9" cy="9" r="1.7"/></svg>`;
-  const settingsIcon = `<svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M2 4h3m3 0h8M2 9h8m3 0h3M2 14h5m3 0h6"/><circle cx="6.5" cy="4" r="1.5"/><circle cx="11.5" cy="9" r="1.5"/><circle cx="8.5" cy="14" r="1.5"/></svg>`;
-  const graphModal = `<div class="graph-modal" hidden aria-hidden="true" role="dialog" aria-label="Knowledge graph">
+  const graphModal = `<div class="graph-modal" hidden aria-hidden="true" role="dialog" aria-modal="true" aria-label="Knowledge graph">
       <div class="graph-bar">
-        <div class="graph-bar-left"><button type="button" class="graph-back">← Back</button></div>
-        <div class="graph-bar-right"><button type="button" class="graph-overview" aria-label="Show whole graph" title="Show whole graph">${graphIcon}</button><div class="graph-settings"><button type="button" class="graph-gear" aria-haspopup="true" aria-expanded="false" aria-label="Settings" title="Settings">${settingsIcon}</button><div class="graph-menu" hidden><label class="graph-opt"><input type="checkbox" class="graph-backlinks" /> Show backlinks</label></div></div></div>
+        <strong class="graph-title">Knowledge graph</strong>
+        <div class="graph-bar-right"><label class="graph-toggle"><input type="checkbox" class="graph-backlinks" /> Backlinks</label><button type="button" class="graph-close">Close</button></div>
       </div>
       <div class="graph-stage">
-        <canvas class="graph-canvas"></canvas>
-        <aside class="graph-detail" hidden><strong class="gd-title"></strong><span class="gd-desc"></span><span class="gd-meta"></span><div class="gd-actions"><a class="gd-open" href="#">Open page →</a><button type="button" class="gd-recenter" hidden>Recenter</button></div></aside>
+        <canvas class="graph-canvas" role="img" aria-label="Interactive map of documentation pages and their links"></canvas>
+        <aside class="graph-detail" hidden><strong class="gd-title"></strong><span class="gd-desc"></span><a class="gd-open" href="#">Open page →</a><span class="gd-meta"></span><div class="gd-relations"><section class="gd-group gd-out-group"><strong></strong><ul class="gd-links"></ul></section><section class="gd-group gd-in-group"><strong></strong><ul class="gd-backlink-list"></ul></section></div><button type="button" class="gd-recenter" hidden>Recenter graph</button></aside>
       </div>
     </div>
     <script type="application/json" class="site-graph-data">${(graphJson || "{}").replace(/</g, "\\u003c")}</script>`;
   // small search and graph icons that sit beside the language picker
   const searchToggle = `<button type="button" class="ds-toggle search-open" aria-label="Search" title="Search"><svg width="17" height="17" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="7" cy="7" r="4.6"/><line x1="10.6" y1="10.6" x2="14.5" y2="14.5" stroke-linecap="round"/></svg></button>`;
-  const graphToggle = `<button type="button" class="ds-toggle graph-open graph-open-overview" aria-label="Open knowledge graph" title="Knowledge graph">${graphIcon}</button>`;
+  const graphToggle = `<button type="button" class="ds-toggle graph-open" aria-label="Open knowledge graph" title="Knowledge graph">${graphIcon}</button>`;
   const topRight = `<div class="topbar">${searchToggle}${graphToggle}${langSwitch || ""}</div>`;
   const searchPanel = `<div class="docsearch" hidden role="search">
         <div class="ds-field">
@@ -507,29 +506,27 @@ for (const p of document.querySelectorAll("pre.shiki")) {
   if (!modal || !openers.length) return;
   const stage = modal.querySelector(".graph-stage");
   const canvas = modal.querySelector(".graph-canvas");
-  const backBtn = modal.querySelector(".graph-back");
-  const overviewBtn = modal.querySelector(".graph-overview");
+  const closeBtn = modal.querySelector(".graph-close");
   const backBox = modal.querySelector(".graph-backlinks");
-  const settingsWrap = modal.querySelector(".graph-settings"), gear = modal.querySelector(".graph-gear"), gmenu = modal.querySelector(".graph-menu");
   const detail = modal.querySelector(".graph-detail");
   const gdTitle = modal.querySelector(".gd-title"), gdDesc = modal.querySelector(".gd-desc"), gdMeta = modal.querySelector(".gd-meta"), gdOpen = modal.querySelector(".gd-open"), gdRecenter = modal.querySelector(".gd-recenter");
+  const gdLinks = modal.querySelector(".gd-links"), gdBacklinks = modal.querySelector(".gd-backlink-list");
+  const gdOutGroup = modal.querySelector(".gd-out-group"), gdInGroup = modal.querySelector(".gd-in-group");
   const ctx = canvas.getContext("2d");
-  let nodes = [], links = [], raf = 0, ready = false, loaded = false, fitDone = false, cur = null;
-  let W = 0, H = 0, hover = null, selected = null, showBacklinks = false, drag = null, pan = null, moved = false, userCam = false, fitS = 1;
-  let history = [];
+  let nodes = [], links = [], raf = 0, ready = false, loaded = false, cur = null, returnFocus = null;
+  let W = 0, H = 0, hover = null, selected = null, showBacklinks = false, drag = null, pan = null, moved = false, userCam = false;
   const cam = { x: 0, y: 0, s: 1 };
-  let camGoal = null, sim = null;
-  // physics: the real d3-force engine (vendored) - same one ddw uses via react-force-graph
-  const CHARGE = -300, LINK_DIST = 70, COLLIDE_PAD = 4, COLLIDE_STR = 0.85;
-  const DPR = () => Math.min(2, window.devicePixelRatio || 1);
-  const rad = (n) => 4 + Math.min(9, n.deg * 1.4);
+  let camGoal = null, fitGoal = { x: 0, y: 0, s: 1 }, sim = null;
+  const CHARGE = -360, LINK_DIST = 92, COLLIDE_PAD = 9, COLLIDE_STR = 0.9;
+  const DPR = () => Math.min(3, window.devicePixelRatio || 1);
+  const rad = (n) => Math.max(8, Math.min(16, 7 + Math.sqrt(n.deg + 1) * 2));
   // parse the embedded graph data once - powers the graph AND in-page hover previews (no fetch)
   let GDATA = null; const byId = new Map();
   try { const el = document.querySelector("script.site-graph-data"); GDATA = el ? JSON.parse(el.textContent) : null; if (GDATA) GDATA.nodes.forEach((n) => byId.set(n.id, n)); } catch (e) {}
   const rootUrl = (() => { try { return new URL(PREFIX || "./", location.href).href; } catch (e) { return null; } })();
   function hrefToId(href) { try { const abs = new URL(href, location.href).href.split("#")[0].split("?")[0]; if (!rootUrl || !abs.startsWith(rootUrl)) return null; let id = abs.slice(rootUrl.length); if (id === "" || id.endsWith("/")) id += "index.html"; return decodeURIComponent(id); } catch (e) { return null; } }
   window.__docMeta = (href) => { const n = byId.get(hrefToId(href)); return n ? { t: n.t, d: n.d } : null; };
-  // Persist the optional backlink layer. The overview itself stays quiet.
+  // Persist whether incoming relationships receive equal visual emphasis.
   const SKEY = "folder2website-graph-settings";
   const _saved = (() => { try { return JSON.parse(localStorage.getItem(SKEY)) || {}; } catch (e) { return {}; } })();
   showBacklinks = _saved.backlinks === true;
@@ -537,7 +534,7 @@ for (const p of document.querySelectorAll("pre.shiki")) {
   if (backBox) backBox.checked = showBacklinks;
   // Derive clusters from the first folder so the graph works for any documentation set.
   const sections = [], sectionByKey = new Map();
-  const words = (value) => value.replace(/[-_]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()).replace(/\b(And|Or|Of|The)\b/g, (word) => word.toLowerCase()).replace(/\bSaas\b/g, "SaaS").replace(/\bApi\b/g, "API").replace(/\bSso\b/g, "SSO");
+  const words = (value) => value.replace(/[-_]+/g, " ").replace(/\\b\\w/g, (c) => c.toUpperCase()).replace(/\\b(And|Or|Of|The)\\b/g, (word) => word.toLowerCase()).replace(/\\bSaas\\b/g, "SaaS").replace(/\\bApi\\b/g, "API").replace(/\\bSso\\b/g, "SSO");
   function sectionOf(id) {
     const home = id === "index.html" || id === "map.html";
     const parts = id.split("/");
@@ -548,7 +545,7 @@ for (const p of document.querySelectorAll("pre.shiki")) {
   }
   // canvas colours follow the generated or custom page theme
   const cssColor = (name, fallback) => getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
-  const TH = () => ({ bg: cssColor("--bg", "#ffffff"), fg: cssColor("--fg", "#1f2328"), muted: cssColor("--muted", "#667085"), line: cssColor("--line", "#d0d5dd"), accent: cssColor("--accent", "#0969da") });
+  const TH = () => { const bg = cssColor("--bg", "#ffffff"), fg = cssColor("--fg", "#1f2328"); return { bg, fg, muted: cssColor("--muted", fg), line: cssColor("--line", fg), accent: cssColor("--accent", fg) }; };
   function load() {
     if (loaded) return; loaded = true;
     try {
@@ -562,12 +559,12 @@ for (const p of document.querySelectorAll("pre.shiki")) {
       const seen = new Set();
       for (const e of links) { nodes[e.s].out.add(e.t); nodes[e.t].inc.add(e.s); const k = Math.min(e.s, e.t) + ":" + Math.max(e.s, e.t); e.dup = seen.has(k); seen.add(k); }
       for (const n of nodes) { const u = new Set(n.out); n.inc.forEach((x) => u.add(x)); n.deg = u.size; }
-      const clusterRadius = Math.min(220, 90 + nodes.length * 3);
+      const clusterRadius = Math.min(300, 120 + nodes.length * 4);
       sections.forEach((section, i) => { const angle = -Math.PI / 2 + i * 6.2832 / Math.max(1, sections.length); section.x = Math.cos(angle) * clusterRadius; section.y = Math.sin(angle) * clusterRadius; });
       cur = nodes.find((n) => n.id === CURRENT) || null;
       const D3 = window.d3;
       if (D3) {
-        const linkObjs = links.map((e) => ({ source: nodes[e.s], target: nodes[e.t] }));
+        const linkObjs = links.filter((e) => !e.dup).map((e) => ({ source: nodes[e.s], target: nodes[e.t] }));
         sim = D3.forceSimulation(nodes)
           .force("charge", D3.forceManyBody().strength(CHARGE))
           .force("link", D3.forceLink(linkObjs).distance(LINK_DIST))
@@ -575,25 +572,24 @@ for (const p of document.querySelectorAll("pre.shiki")) {
           .force("sectionX", D3.forceX((n) => n.sec.x).strength(0.12))
           .force("sectionY", D3.forceY((n) => n.sec.y).strength(0.12))
           .force("collide", D3.forceCollide().radius((n) => rad(n) + COLLIDE_PAD).strength(COLLIDE_STR))
+          .velocityDecay(0.35)
           .stop();
+        // Settle before the first frame. Opening the graph should reveal one stable map,
+        // not a layout that grows and changes shape in front of the reader.
+        for (let i = 0; i < 260; i++) sim.tick();
       }
       ready = true;
     } catch (e) {}
   }
-  // a node's neighbourhood: itself + forward links (+ backlinks when the toggle is on)
+  // Selection changes emphasis only. Node positions remain identical in every state.
   function neighbours(f) { const s = new Set([f.i]); f.out.forEach((x) => s.add(x)); if (showBacklinks) f.inc.forEach((x) => s.add(x)); return s; }
-  // Focus mode uses a stable radial layout. It does not inherit the compressed positions
-  // from the whole-site simulation, so direct relationships remain readable.
-  function focusLayout(f) {
-    const ids = [...neighbours(f)].filter((i) => i !== f.i).sort((a, b) => {
-      const ad = f.out.has(a) ? 0 : 1, bd = f.out.has(b) ? 0 : 1;
-      return ad - bd || nodes[a].t.localeCompare(nodes[b].t);
-    });
-    const radius = 92 + Math.min(96, ids.length * 8), map = new Map([[f.i, { x: f.x, y: f.y }]]);
-    ids.forEach((id, i) => { const angle = -Math.PI / 2 + i * 6.2832 / Math.max(1, ids.length); map.set(id, { x: f.x + Math.cos(angle) * radius, y: f.y + Math.sin(angle) * radius }); });
-    return map;
+  function resize() {
+    const r = canvas.getBoundingClientRect(), nextW = Math.max(1, r.width), nextH = Math.max(1, r.height), d = DPR();
+    W = nextW; H = nextH;
+    const bw = Math.max(1, Math.round(W * d)), bh = Math.max(1, Math.round(H * d));
+    if (canvas.width !== bw) canvas.width = bw;
+    if (canvas.height !== bh) canvas.height = bh;
   }
-  function resize() { const r = canvas.getBoundingClientRect(); W = r.width; H = r.height; const d = DPR(); canvas.width = Math.max(1, W * d); canvas.height = Math.max(1, H * d); }
   function toWorld(px, py) { return { x: (px - W / 2 - cam.x) / cam.s, y: (py - H / 2 - cam.y) / cam.s }; }
   function tick() {
     if (!sim) return false;
@@ -601,123 +597,172 @@ for (const p of document.querySelectorAll("pre.shiki")) {
     sim.tick();
     return true;
   }
-  function fit() { if (!nodes.length) return; let maxR = 1; for (const n of nodes) maxR = Math.max(maxR, Math.hypot(n.x, n.y) + rad(n)); fitS = Math.max(0.25, Math.min(2, (Math.min(W, H) / 2 - 40) / maxR)); }
-  // zoom that frames a node + its visible neighbourhood
-  function focusZoom(f) { const layout = focusLayout(f); let maxR = 30; layout.forEach((p, i) => { maxR = Math.max(maxR, Math.hypot(p.x - f.x, p.y - f.y) + rad(nodes[i])); }); return Math.max(0.5, Math.min(2.2, (Math.min(W, H) / 2 - 70) / (maxR + 30))); }
-  // smooth camera: a goal (centre selected, or fit-all) that cam lerps toward each frame
-  function updateCamGoal() { if (userCam) { camGoal = null; return; } if (selected) { const z = focusZoom(selected); camGoal = { s: z, x: -selected.x * z, y: -selected.y * z }; } else camGoal = { s: fitS, x: 0, y: 0 }; }
+  function fit() {
+    if (!nodes.length || W < 2 || H < 2) return;
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const n of nodes) { minX = Math.min(minX, n.x); minY = Math.min(minY, n.y); maxX = Math.max(maxX, n.x); maxY = Math.max(maxY, n.y); }
+    const overlay = W < 800 && !detail.hidden ? Math.min(H * 0.42, detail.getBoundingClientRect().height + 24) : 0;
+    const usableH = Math.max(180, H - overlay), pad = W < 700 ? 64 : 88;
+    const spanX = Math.max(1, maxX - minX), spanY = Math.max(1, maxY - minY);
+    const s = Math.max(0.35, Math.min(1.8, Math.min((W - pad * 2) / spanX, (usableH - pad * 2) / spanY)));
+    const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
+    fitGoal = { s, x: -cx * s, y: -overlay / 2 - cy * s };
+  }
+  function updateCamGoal() { camGoal = userCam ? null : fitGoal; }
   function stepCam() { if (!camGoal) return; cam.s += (camGoal.s - cam.s) * 0.14; cam.x += (camGoal.x - cam.x) * 0.14; cam.y += (camGoal.y - cam.y) * 0.14; }
-  // which nodes to *try* to label, in priority order. On hover: the focused neighbourhood.
-  // Otherwise: hubs first, with a zoom-adaptive degree gate (zoomed out -> only big hubs).
   function labelOrder(f) {
-    if (f) { const a = [...neighbours(f)].map((i) => nodes[i]); a.sort((x, y) => x === f ? -1 : y === f ? 1 : y.deg - x.deg); return a; }
-    return [];
+    const ordered = [], seen = new Set();
+    const add = (n) => { if (n && !seen.has(n.i)) { seen.add(n.i); ordered.push(n); } };
+    add(f); add(cur);
+    if (f) [...neighbours(f)].map((i) => nodes[i]).sort((a, b) => b.deg - a.deg || a.t.localeCompare(b.t)).forEach(add);
+    else [...nodes].sort((a, b) => b.deg - a.deg || a.t.localeCompare(b.t)).slice(0, W < 600 ? 6 : 18).forEach(add);
+    return ordered;
+  }
+  function edgeState(e, f) {
+    if (!f) return { alpha: 0.22, width: 0.8, lit: false };
+    if (e.s !== f.i && e.t !== f.i) return { alpha: 0.07, width: 0.65, lit: false };
+    const other = e.s === f.i ? e.t : e.s;
+    if (f.out.has(other)) return { alpha: 0.9, width: 1.4, lit: true };
+    if (showBacklinks && f.inc.has(other)) return { alpha: 0.62, width: 1, lit: true };
+    return { alpha: 0.07, width: 0.65, lit: false };
   }
   function draw() {
     const d = DPR(); ctx.setTransform(d, 0, 0, d, 0, 0); ctx.clearRect(0, 0, W, H);
-    const C = TH(), f = selected || hover, nset = f ? neighbours(f) : null;
-    const focused = !!selected, layout = focused ? focusLayout(selected) : null;
-    const pos = (n) => layout?.get(n.i) || n;
-    // world space: edges + nodes
+    const C = TH(), f = hover || selected, nset = f ? neighbours(f) : null;
+    // World space: every state uses the same force-directed positions.
     ctx.save(); ctx.translate(W / 2 + cam.x, H / 2 + cam.y); ctx.scale(cam.s, cam.s);
-    for (const e of links) {
-      if (!f) continue; // proximity and section clusters carry the overview
-      let lit = false, back = false;
-      if (f) { if (e.s === f.i) lit = true; else if (showBacklinks && e.t === f.i && !f.out.has(e.s)) { lit = true; back = true; } }
-      if (!lit) continue;
-      ctx.strokeStyle = C.line; ctx.globalAlpha = back ? 0.65 : 1;
-      ctx.lineWidth = (back ? 0.7 : 1) / cam.s;
-      const a = pos(nodes[e.s]), b = pos(nodes[e.t]); ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+    for (const litPass of [false, true]) {
+      for (const e of links) {
+        if (e.dup) continue;
+        const state = edgeState(e, f);
+        if (state.lit !== litPass) continue;
+        const a = nodes[e.s], b = nodes[e.t];
+        ctx.strokeStyle = C.line; ctx.globalAlpha = state.alpha; ctx.lineWidth = state.width / cam.s;
+        ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+      }
     }
     ctx.globalAlpha = 1;
     for (const n of nodes) {
-      if (focused && !nset.has(n.i)) continue;
       const lit = !f || nset.has(n.i);
-      ctx.globalAlpha = lit ? 1 : 0.1;
-      const big = n === f || n === selected || n === cur;
-      const screenRadius = rad(n) * (big ? 1.4 : 1);
-      const p = pos(n);
-      ctx.beginPath(); ctx.arc(p.x, p.y, screenRadius / cam.s, 0, 6.2832);
-      ctx.fillStyle = big ? C.accent : C.muted; ctx.fill();
+      ctx.globalAlpha = lit ? 0.96 : 0.24;
+      const emphasized = n === f || n === selected || n === cur;
+      const screenRadius = rad(n) * (emphasized ? 1.15 : 1);
+      ctx.beginPath(); ctx.arc(n.x, n.y, screenRadius / cam.s, 0, 6.2832);
+      ctx.fillStyle = emphasized ? C.accent : C.muted; ctx.fill();
       if (n === f || n === selected) { ctx.lineWidth = 2 / cam.s; ctx.strokeStyle = C.fg; ctx.stroke(); }
-      if (n === cur) { ctx.beginPath(); ctx.arc(p.x, p.y, (rad(n) * 1.4 + 5) / cam.s, 0, 6.2832); ctx.lineWidth = 1.5 / cam.s; ctx.strokeStyle = C.accent; ctx.stroke(); } // "you are here"
+      if (n === cur) { ctx.beginPath(); ctx.arc(n.x, n.y, (screenRadius + 5) / cam.s, 0, 6.2832); ctx.lineWidth = 1.5 / cam.s; ctx.strokeStyle = C.accent; ctx.stroke(); }
     }
     ctx.globalAlpha = 1; ctx.restore();
-    // Screen space: the overview labels sections; focused and hovered nodes label one hop.
+    // Text stays in screen space. Zooming the graph never scales type into a blur.
     ctx.setTransform(d, 0, 0, d, 0, 0);
-    if (!f) {
-      ctx.font = "600 13px system-ui, -apple-system, sans-serif"; ctx.textBaseline = "middle"; ctx.textAlign = "center";
-      for (const section of sections) {
-        const members = nodes.filter((n) => n.sec === section); if (!members.length) continue;
-        const sx = members.reduce((sum, n) => sum + W / 2 + cam.x + n.x * cam.s, 0) / members.length;
-        const sy = members.reduce((sum, n) => sum + H / 2 + cam.y + n.y * cam.s, 0) / members.length - 24;
-        ctx.lineWidth = 5; ctx.strokeStyle = C.bg; ctx.strokeText(section.label, sx, sy); ctx.fillStyle = C.fg; ctx.fillText(section.label, sx, sy);
-      }
-      ctx.textAlign = "start";
+    const fontFamily = cssColor("--font", "system-ui, -apple-system, sans-serif");
+    const crisp = (value) => Math.round(value * d) / d;
+    ctx.font = "600 13px " + fontFamily; ctx.textBaseline = "middle"; ctx.textAlign = "center";
+    for (const section of sections) {
+      if (W < 600 && f) continue;
+      const members = nodes.filter((n) => n.sec === section); if (members.length < 3) continue;
+      const sx = crisp(members.reduce((sum, n) => sum + W / 2 + cam.x + n.x * cam.s, 0) / members.length);
+      const sy = crisp(members.reduce((sum, n) => sum + H / 2 + cam.y + n.y * cam.s, 0) / members.length - 34);
+      const textWidth = ctx.measureText(section.label).width;
+      ctx.globalAlpha = f ? 0.55 : 0.78; ctx.fillStyle = C.bg; ctx.fillRect(sx - textWidth / 2 - 5, sy - 9, textWidth + 10, 18);
+      ctx.fillStyle = C.muted; ctx.fillText(section.label, sx, sy); ctx.globalAlpha = 1;
     }
-    ctx.font = "12px system-ui, -apple-system, sans-serif"; ctx.textBaseline = "middle";
+    ctx.font = "500 14px " + fontFamily; ctx.textBaseline = "middle";
     const placed = [];
     for (const n of labelOrder(f)) {
-      const p = pos(n), sx = W / 2 + cam.x + p.x * cam.s, sy = H / 2 + cam.y + p.y * cam.s;
-      if (sx < 0 || sx > W || sy < 0 || sy > H) continue;
-      const big = n === f || n === selected || n === cur;
-      const w = ctx.measureText(n.t).width, lx = sx + rad(n) * (big ? 1.4 : 1) + 5;
-      const box = { x: lx - 2, y: sy - 9, w: w + 4, h: 18 };
+      const sx = crisp(W / 2 + cam.x + n.x * cam.s), sy = crisp(H / 2 + cam.y + n.y * cam.s);
+      if (sx < -20 || sx > W + 20 || sy < -20 || sy > H + 20) continue;
+      const emphasized = n === f || n === selected || n === cur;
+      const label = W < 600 && n.t.length > 24 ? n.t.slice(0, 23).trimEnd() + "…" : n.t;
+      const w = ctx.measureText(label).width, gap = rad(n) * (emphasized ? 1.15 : 1) + 7;
+      let left = sx > W / 2, lx = crisp(sx + (left ? -gap : gap));
+      if (left && lx - w < 8) { left = false; lx = crisp(sx + gap); }
+      else if (!left && lx + w > W - 8) { left = true; lx = crisp(sx - gap); }
+      const box = { x: left ? lx - w - 4 : lx - 4, y: sy - 10, w: w + 8, h: 20 };
       let clash = false; for (const p of placed) { if (box.x < p.x + p.w && box.x + box.w > p.x && box.y < p.y + p.h && box.y + box.h > p.y) { clash = true; break; } }
-      if (clash) continue;
+      if (clash && !emphasized) continue;
       placed.push(box);
-      ctx.lineWidth = 3; ctx.strokeStyle = C.bg; ctx.strokeText(n.t, lx, sy);
-      ctx.globalAlpha = (n === f || n === cur) ? 1 : 0.7; ctx.fillStyle = C.fg; ctx.fillText(n.t, lx, sy); ctx.globalAlpha = 1;
-      if (placed.length > 44) break;
+      ctx.globalAlpha = 0.92; ctx.fillStyle = C.bg; ctx.fillRect(box.x, box.y, box.w, box.h);
+      ctx.globalAlpha = emphasized ? 1 : 0.76; ctx.fillStyle = C.fg; ctx.textAlign = left ? "right" : "left"; ctx.fillText(label, lx, sy); ctx.globalAlpha = 1;
+      if (placed.length >= (W < 600 ? 4 : 28)) break;
+    }
+    ctx.textAlign = "start";
+  }
+  function loop() { if (ready) { tick(); updateCamGoal(); stepCam(); draw(); } raf = requestAnimationFrame(loop); }
+  function pick(px, py) { let best = null, bd = Infinity; for (const n of nodes) { const sx = W / 2 + cam.x + n.x * cam.s, sy = H / 2 + cam.y + n.y * cam.s, dx = sx - px, dy = sy - py, dd = dx * dx + dy * dy, emphasized = n === selected || n === cur, rr = rad(n) * (emphasized ? 1.15 : 1) + 10; if (dd < rr * rr && dd < bd) { bd = dd; best = n; } } return best; }
+  function syncRecenter() { gdRecenter.hidden = !userCam; }
+  function renderRelations(list, group, label, ids) {
+    const related = [...ids].map((i) => nodes[i]).filter(Boolean).sort((a, b) => a.t.localeCompare(b.t));
+    group.hidden = related.length === 0;
+    group.firstElementChild.textContent = label + " (" + related.length + ")";
+    list.replaceChildren();
+    for (const n of related) {
+      const li = document.createElement("li"), button = document.createElement("button");
+      button.type = "button"; button.textContent = n.t; button.addEventListener("click", () => applySelection(n));
+      li.appendChild(button); list.appendChild(li);
     }
   }
-  function loop() { if (ready) { tick(); if (!fitDone && sim && sim.alpha() < 0.25) { fit(); fitDone = true; } updateCamGoal(); stepCam(); draw(); } raf = requestAnimationFrame(loop); }
-  function pick(px, py) { const w = toWorld(px, py), layout = selected ? focusLayout(selected) : null, visible = selected ? neighbours(selected) : null; let best = null, bd = Infinity; for (const n of nodes) { if (visible && !visible.has(n.i)) continue; const p = layout?.get(n.i) || n, dx = p.x - w.x, dy = p.y - w.y, dd = dx * dx + dy * dy, big = n === selected || n === cur, rr = (rad(n) * (big ? 1.4 : 1) + 8) / cam.s; if (dd < rr * rr && dd < bd) { bd = dd; best = n; } } return best; }
-  // The detail rail represents persistent selection. Hover only previews relationships on
-  // the canvas, so the layout does not jump while the pointer moves across the overview.
-  function syncRecenter() { gdRecenter.hidden = !selected || !userCam; }
+  function refitAfterLayout(instant = false) {
+    requestAnimationFrame(() => {
+      if (modal.hidden) return;
+      resize(); fit();
+      if (!userCam) {
+        updateCamGoal();
+        if (instant) { cam.x = fitGoal.x; cam.y = fitGoal.y; cam.s = fitGoal.s; }
+      }
+    });
+  }
   function renderDetail() {
     const f = selected;
     stage.classList.toggle("has-detail", !!f);
     if (!f) { detail.hidden = true; return; }
     detail.hidden = false;
-    gdTitle.textContent = f.t; gdDesc.textContent = f.d || "";
-    const back = f.inc.size;
-    gdMeta.textContent = f.out.size + (f.out.size === 1 ? " link" : " links") + (back ? " · " + back + " backlink" + (back === 1 ? "" : "s") : "") + (f.id === CURRENT ? " · you are here" : "");
+    gdTitle.textContent = f.t; gdDesc.textContent = f.d || ""; gdDesc.hidden = !f.d;
+    gdMeta.textContent = f.id === CURRENT ? "You are here" : "";
+    gdMeta.hidden = f.id !== CURRENT;
     gdOpen.href = PREFIX + f.id + (f.id !== CURRENT ? "?from=" + encodeURIComponent(CURRENT) : "");
+    renderRelations(gdLinks, gdOutGroup, "Links", f.out);
+    renderRelations(gdBacklinks, gdInGroup, "Backlinks", f.inc);
     syncRecenter();
-    gdRecenter.onclick = () => { userCam = false; syncRecenter(); updateCamGoal(); };
+    gdRecenter.onclick = () => { userCam = false; fit(); syncRecenter(); updateCamGoal(); };
   }
-  function applySelection(n) { selected = n || null; hover = null; userCam = false; overviewBtn.disabled = !selected; updateCamGoal(); renderDetail(); }
-  function select(n, remember = true) { if (!n || n === selected) return; if (remember) history.push(selected); applySelection(n); }
-  function showOverview(remember = true) { if (!selected) return; if (remember) history.push(selected); applySelection(null); }
-  function goBack() { if (history.length) applySelection(history.pop()); else close(); }
-  function close() { modal.hidden = true; modal.setAttribute("aria-hidden", "true"); document.body.classList.remove("graph-open-body"); cancelAnimationFrame(raf); raf = 0; hover = null; selected = null; history = []; }
-  function open() { modal.hidden = false; modal.setAttribute("aria-hidden", "false"); document.body.classList.add("graph-open-body"); load(); resize(); if (sim) { sim.alpha(1); sim.alphaTarget(0); } fitDone = false; userCam = false; hover = null; history = []; applySelection(null); if (!raf) loop(); }
-  function openFocused(id) { open(); const n = nodes.find((x) => x.id === id); if (n) applySelection(n); }
-  // Opening from a page focuses that page. Back returns to the document; the graph icon
-  // moves to the overview without pretending to be browser navigation.
-  openers.forEach((b) => b.addEventListener("click", (e) => { e.preventDefault(); if (b.classList.contains("graph-open-current") && CURRENT && byId.get(CURRENT)) openFocused(CURRENT); else open(); }));
-  backBtn.addEventListener("click", goBack);
-  overviewBtn.addEventListener("click", () => showOverview());
-  backBox.addEventListener("change", () => { showBacklinks = backBox.checked; saveSettings(); updateCamGoal(); renderDetail(); });
-  gear.addEventListener("click", (e) => { e.stopPropagation(); const willOpen = gmenu.hidden; gmenu.hidden = !willOpen; gear.setAttribute("aria-expanded", String(willOpen)); });
-  document.addEventListener("click", (e) => { if (settingsWrap && !settingsWrap.contains(e.target)) { gmenu.hidden = true; gear.setAttribute("aria-expanded", "false"); } });
-  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !modal.hidden) goBack(); });
-  addEventListener("resize", () => { if (!modal.hidden) resize(); });
+  function applySelection(n) {
+    const railChanged = !!selected !== !!n;
+    selected = n || null; hover = null; renderDetail();
+    if (railChanged) refitAfterLayout();
+  }
+  function select(n) { if (n && n !== selected) applySelection(n); }
+  function close() { modal.hidden = true; modal.setAttribute("aria-hidden", "true"); document.body.classList.remove("graph-open-body"); cancelAnimationFrame(raf); raf = 0; hover = null; selected = null; returnFocus?.focus(); }
+  function openFocused(id) {
+    modal.hidden = false; modal.setAttribute("aria-hidden", "false"); document.body.classList.add("graph-open-body");
+    load(); userCam = false; hover = null; selected = nodes.find((n) => n.id === id) || cur || null; renderDetail();
+    refitAfterLayout(true); if (!raf) loop(); closeBtn.focus();
+  }
+  openers.forEach((b) => b.addEventListener("click", (e) => { e.preventDefault(); returnFocus = b; openFocused(CURRENT); }));
+  closeBtn.addEventListener("click", close);
+  backBox.addEventListener("change", () => { showBacklinks = backBox.checked; saveSettings(); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !modal.hidden) close(); });
+  addEventListener("resize", () => { if (!modal.hidden) refitAfterLayout(); });
+  if (typeof ResizeObserver !== "undefined") new ResizeObserver(() => { if (!modal.hidden) refitAfterLayout(); }).observe(canvas);
   canvas.addEventListener("pointerdown", (e) => { const r = canvas.getBoundingClientRect(); moved = false; const n = pick(e.clientX - r.left, e.clientY - r.top); if (n) { drag = n; n.fx = n.x; n.fy = n.y; if (sim) { sim.alphaTarget(0.3); if (sim.alpha() < 0.3) sim.alpha(0.3); } } else pan = { x: e.clientX, y: e.clientY }; canvas.setPointerCapture(e.pointerId); });
   canvas.addEventListener("pointermove", (e) => {
     const r = canvas.getBoundingClientRect(), px = e.clientX - r.left, py = e.clientY - r.top;
     if (drag) { const w = toWorld(px, py); drag.fx = w.x; drag.fy = w.y; moved = true; return; }
     if (pan) { cam.x += e.clientX - pan.x; cam.y += e.clientY - pan.y; pan = { x: e.clientX, y: e.clientY }; moved = true; userCam = true; syncRecenter(); camGoal = null; return; }
-    const n = pick(px, py); if (n !== hover) { hover = n; renderDetail(); } canvas.style.cursor = n ? "pointer" : "grab";
+    const n = pick(px, py); if (n !== hover) hover = n; canvas.style.cursor = n ? "pointer" : "grab";
   });
   canvas.addEventListener("pointerup", () => {
-    if (drag) { if (!moved) select(drag); drag.fx = null; drag.fy = null; if (sim) sim.alphaTarget(0); drag = null; }   // click node = focus + zoom (persists)
-    else if (pan) { if (!moved) showOverview(); pan = null; }
+    if (drag) { if (!moved) select(drag); drag.fx = null; drag.fy = null; if (sim) sim.alphaTarget(0); drag = null; }
+    else if (pan) { if (!moved) applySelection(null); pan = null; }
   });
-  canvas.addEventListener("pointerleave", () => { hover = null; renderDetail(); });
-  canvas.addEventListener("wheel", (e) => { e.preventDefault(); userCam = true; syncRecenter(); camGoal = null; cam.s = Math.max(0.3, Math.min(3, cam.s * Math.exp(-e.deltaY * 0.001))); }, { passive: false });
+  canvas.addEventListener("pointerleave", () => { hover = null; });
+  canvas.addEventListener("wheel", (e) => {
+    e.preventDefault();
+    const r = canvas.getBoundingClientRect(), px = e.clientX - r.left, py = e.clientY - r.top, before = toWorld(px, py);
+    userCam = true; syncRecenter(); camGoal = null;
+    cam.s = Math.max(0.3, Math.min(3, cam.s * Math.exp(-e.deltaY * 0.001)));
+    cam.x = px - W / 2 - before.x * cam.s; cam.y = py - H / 2 - before.y * cam.s;
+  }, { passive: false });
   // arrived via the graph (?from=...)? offer a way back to where we came from
   (function () {
     const from = new URLSearchParams(location.search).get("from");
@@ -776,12 +821,12 @@ for (const p of document.querySelectorAll("pre.shiki")) {
     return bestN > 0 ? best : null;
   }
   function snippet(r, terms) {
-    const text = (r.x || r.d || "").replace(/\s+/g, " ").trim();
+    const text = (r.x || r.d || "").replace(/\\s+/g, " ").trim();
     if (!text) return "";
     const lower = text.toLowerCase();
     let at = -1;
     terms.forEach((term) => { const i = lower.indexOf(term); if (i >= 0 && (at < 0 || i < at)) at = i; });
-    if (at < 0) return text.length > 150 ? text.slice(0, 147).replace(/\s+\S*$/, "") + "…" : text;
+    if (at < 0) return text.length > 150 ? text.slice(0, 147).replace(/\\s+\\S*$/, "") + "…" : text;
     let start = Math.max(0, at - 55), end = Math.min(text.length, at + 115);
     if (start) start = text.indexOf(" ", start) + 1;
     if (end < text.length) { const space = text.lastIndexOf(" ", end); if (space > start) end = space; }
@@ -790,7 +835,7 @@ for (const p of document.querySelectorAll("pre.shiki")) {
   function run(q) {
     q = (q || "").trim();
     if (!mini || !q) { results.innerHTML = ""; hide(); return; }
-    const terms = q.toLowerCase().split(/\s+/).filter(Boolean);
+    const terms = q.toLowerCase().split(/\\s+/).filter(Boolean);
     let r = mini.search(q);
     if (!r.length && terms.length > 1) r = mini.search(q, { combineWith: "OR" });
     r.forEach((x) => { const h = hop[x.id]; x._rank = x.score - (h != null ? Math.min(h, 6) * x.score * 0.04 : 0); }); // relevance dominates; nearer pages edge ahead

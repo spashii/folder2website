@@ -83,9 +83,10 @@ GITHUB_TOKEN=github_pat_... bunx github:spashii/folder2website#main owner/repo
   navigation and links to matching sections. The output includes the index as
   `search-index.json`.
 - Knowledge graph from a top-right icon, built on
-  [d3-force](https://github.com/d3/d3-force). The overview groups pages by
-  section. Selecting a page shows one hop. Backlinks are hidden by default.
-  Graph colors use the roles in the manifest theme.
+  [d3-force](https://github.com/d3/d3-force). Pages keep one stable layout.
+  Selecting a page highlights its links without rearranging the graph. The
+  detail rail lists links and backlinks. Backlink emphasis is off by default.
+  Graph colors and type use roles from the manifest theme.
 - A grouped "Related pages" list on each page. It can open the graph focused
   on the current page. Use `--hide-related-pages` when the source already has
   its own related-links section.
