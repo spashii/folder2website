@@ -44,7 +44,8 @@ a { color: var(--accent); text-underline-offset: .16em; }
 ul { margin: 0 0 18px; padding-left: var(--indent); list-style: disc; }
 ol { margin: 0 0 18px; padding-left: var(--indent); }
 li { padding: 4px 0; }
-li::marker { color: var(--line); }
+ul > li::marker { color: var(--line); }
+ol > li::marker { color: var(--muted); font-weight: 600; }
 li > p { margin: 0; }
 li > p + p { margin-top: 18px; }
 li > ul, li > ol { margin: 4px 0 6px; }
