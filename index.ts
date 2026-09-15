@@ -23,7 +23,7 @@ import { tmpdir } from "node:os";
 import { makeOgPng } from "./og.ts";
 
 const argv = process.argv.slice(2);
-const usage = "usage: folder2website <path-or-repo> [--out <dir>] [--token <T>] [--entry f.md ...] [--base-url <url>] [--manifest <path>] [--clone-dir <dir>] [--hide-generator-attribution] [--hide-footer-actions] [--hide-related-pages] [--port <n>] [--serve]";
+const usage = "usage: folder2website <path-or-repo> [--out <dir>] [--token <T>] [--entry f.md ...] [--base-url <url>] [--manifest <path>] [--clone-dir <dir>] [--hide-generator-attribution] [--hide-footer-actions] [--hide-related-pages] [--hide-commit-info] [--port <n>] [--serve]";
 if (argv.includes("-h") || argv.includes("--help")) {
   console.log(usage);
   process.exit(0);
@@ -43,6 +43,7 @@ const clonePath = flag("--clone-dir") ? resolve(flag("--clone-dir")) : null;
 const showGeneratorAttribution = !argv.includes("--hide-generator-attribution");
 const showFooterActions = !argv.includes("--hide-footer-actions");
 const showRelatedPages = !argv.includes("--hide-related-pages");
+const showCommitInfo = !argv.includes("--hide-commit-info");
 const port = Number(flag("--port") ?? 4321);
 if (!Number.isInteger(port) || port < 1 || port > 65535) {
   console.error("--port must be an integer from 1 to 65535");
@@ -380,7 +381,7 @@ function authorHtml(commit) {
 }
 const commitLine = (label, commit) => commit ? `${label} ${relativeDate(commit.date)} by ${authorHtml(commit)}` : "";
 
-function pageHtml({ title, tagline, body, theme, extraCss, depth, og, canonical, isIndex, siteTitle, logo, logoDark, editUrl, updated, created, twin, themeColor, themeColorDark, hasManifest, lang, langSwitch, hreflang, nav, isHome, graphJson, relatedPages, outRel, comments, hasMermaid, showGeneratorAttribution, showFooterActions, showRelatedPages }) {
+function pageHtml({ title, tagline, body, theme, extraCss, depth, og, canonical, isIndex, siteTitle, logo, logoDark, editUrl, updated, created, twin, themeColor, themeColorDark, hasManifest, lang, langSwitch, hreflang, nav, isHome, graphJson, relatedPages, outRel, comments, hasMermaid, showGeneratorAttribution, showFooterActions, showRelatedPages, showCommitInfo }) {
   const prefix = "../".repeat(depth);
   const css = theme.replace(/url\("fonts\//g, `url("${prefix}fonts/`) + (extraCss || "");
   const favicon = logo;
@@ -403,7 +404,8 @@ function pageHtml({ title, tagline, body, theme, extraCss, depth, og, canonical,
   const gitLink = editUrl ? `<a href="${esc(editUrl)}">Edit on GitHub</a>` : "";
   const copy = `<button class="linkish copy-md" data-md="${esc(twin)}">Copy as Markdown</button>`;
   const sameCommit = updated?.hash && created?.hash && updated.hash === created.hash;
-  const lines = [sameCommit ? "" : commitLine("Updated", updated), commitLine("Created", created)].filter(Boolean);
+  // Created/Updated lines read the git log; a customer-facing guide usually wants none of it.
+  const lines = showCommitInfo ? [sameCommit ? "" : commitLine("Updated", updated), commitLine("Created", created)].filter(Boolean) : [];
   const madeWith = showGeneratorAttribution
     ? `<div class="meta-line">Website made with <a href="https://github.com/spashii/folder2website" data-popover-title="spashii/folder2website" data-popover-description="Point it at a repo or any markdown folder, get a clean website.">spashii/folder2website</a></div>`
     : "";
@@ -1127,7 +1129,7 @@ async function build(root, { serve = false } = {}) {
   }
 
   for (const pg of pages) {
-    await write(join(outDir, pg.outRel), pageHtml({ ...pg, theme, extraCss: override, siteTitle, themeColor: manifest?.background_color, themeColorDark: ext.dark?.bg, hasManifest: !!manifest, lang: pg.locale, langSwitch: switcherFor(pg), hreflang: hreflangFor(pg), nav: crumbsFor(pg), isHome: pg.outRel === localeHome[pg.locale], graphJson, comments: commentsOut, showGeneratorAttribution, showFooterActions, showRelatedPages }));
+    await write(join(outDir, pg.outRel), pageHtml({ ...pg, theme, extraCss: override, siteTitle, themeColor: manifest?.background_color, themeColorDark: ext.dark?.bg, hasManifest: !!manifest, lang: pg.locale, langSwitch: switcherFor(pg), hreflang: hreflangFor(pg), nav: crumbsFor(pg), isHome: pg.outRel === localeHome[pg.locale], graphJson, comments: commentsOut, showGeneratorAttribution, showFooterActions, showRelatedPages, showCommitInfo }));
     await write(join(outDir, pg.twinRel), pg.src.replace(/(\]\([^)]*?)README\.md/gi, "$1index.md"));
   }
   let copied = 0;

@@ -39,6 +39,8 @@ GITHUB_TOKEN=github_pat_... bunx github:spashii/folder2website#main owner/repo
 - `--hide-generator-attribution`: omit the folder2website attribution from
   page footers.
 - `--hide-footer-actions`: omit the edit and copy actions from page footers.
+- `--hide-commit-info`: omit the Created and Updated lines, which come from the
+  git log of each page.
 - `--hide-related-pages`: omit the generated related-page list. Markdown links
   still populate the knowledge graph.
 - `--serve`: live preview.
