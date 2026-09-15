@@ -385,7 +385,7 @@ function pageHtml({ title, tagline, body, theme, extraCss, depth, og, canonical,
   const prefix = "../".repeat(depth);
   // @import only works at the top of a stylesheet; custom CSS lands after the theme, so hoist its imports (web fonts) first.
   const imports = [];
-  const rules = (theme.replace(/url\("fonts\//g, `url("${prefix}fonts/`) + (extraCss || "")).replace(/@import\s+[^;]+;/g, (m) => { imports.push(m); return ""; });
+  const rules = (theme.replace(/url\("fonts\//g, `url("${prefix}fonts/`) + (extraCss || "")).replace(/@import\s+(?:url\((?:"[^"]*"|'[^']*'|[^)]*)\)|"[^"]*"|'[^']*')[^;]*;/g, (m) => { imports.push(m); return ""; });
   const css = imports.join("") + rules;
   const favicon = logo;
   const iconType = (p) => p.endsWith(".svg") ? ' type="image/svg+xml"' : "";
