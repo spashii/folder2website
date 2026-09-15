@@ -68,13 +68,16 @@ GITHUB_TOKEN=github_pat_... bunx github:spashii/folder2website#main owner/repo
 - Table of contents.
 - Standalone text links rendered as action buttons. Links inside sentences
   stay inline.
-- Simple responsive tables with horizontal scrolling when needed.
+- Tables spill past the reading column, centred, up to 1040px, and scroll
+  only when wider than the viewport.
 - Copy-code buttons.
 - Image lightbox.
 - Hover previews for internal pages.
 - Git footer with an edit link, Markdown copy action, authors, and generator
   link.
 - Manifest-based title, description, icon, colors, and optional extra CSS.
+  `@import` rules in the extra CSS (web fonts) are hoisted to the top of the
+  stylesheet so they take effect.
 
 ## Navigate & explore
 

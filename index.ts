@@ -383,7 +383,10 @@ const commitLine = (label, commit) => commit ? `${label} ${relativeDate(commit.d
 
 function pageHtml({ title, tagline, body, theme, extraCss, depth, og, canonical, isIndex, siteTitle, logo, logoDark, editUrl, updated, created, twin, themeColor, themeColorDark, hasManifest, lang, langSwitch, hreflang, nav, isHome, graphJson, relatedPages, outRel, comments, hasMermaid, showGeneratorAttribution, showFooterActions, showRelatedPages, showCommitInfo }) {
   const prefix = "../".repeat(depth);
-  const css = theme.replace(/url\("fonts\//g, `url("${prefix}fonts/`) + (extraCss || "");
+  // @import only works at the top of a stylesheet; custom CSS lands after the theme, so hoist its imports (web fonts) first.
+  const imports = [];
+  const rules = (theme.replace(/url\("fonts\//g, `url("${prefix}fonts/`) + (extraCss || "")).replace(/@import\s+[^;]+;/g, (m) => { imports.push(m); return ""; });
+  const css = imports.join("") + rules;
   const favicon = logo;
   const iconType = (p) => p.endsWith(".svg") ? ' type="image/svg+xml"' : "";
   const icon = favicon
@@ -661,7 +664,8 @@ for (const p of document.querySelectorAll("pre.shiki")) {
     ctx.globalAlpha = 1; ctx.restore();
     // Text stays in screen space. Zooming the graph never scales type into a blur.
     ctx.setTransform(d, 0, 0, d, 0, 0);
-    const fontFamily = cssColor("--font", "system-ui, -apple-system, sans-serif");
+    // Canvas text has no fallback chain of its own: a family that is not loaded yet drops to the browser default (a serif).
+    const fontFamily = [cssColor("--font", ""), "system-ui, -apple-system, sans-serif"].filter(Boolean).join(", ");
     const crisp = (value) => Math.round(value * d) / d;
     ctx.font = "600 13px " + fontFamily; ctx.textBaseline = "middle"; ctx.textAlign = "center";
     for (const section of sections) {
