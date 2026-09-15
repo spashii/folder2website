@@ -57,9 +57,11 @@ pre code { background: none; padding: 0; }
 .wrap img { display: block; max-width: 100%; height: auto; margin: 28px auto;
   border: 1px solid var(--line); border-radius: 14px; cursor: zoom-in; }
 .wrap img.logo { margin: 0 0 20px; border: 0; border-radius: 0; cursor: default; }
-.table-wrap { position: relative; width: 100%; margin: 28px 0 34px; overflow-x: auto;
+/* Tables spill past the reading column, centred, so wide ones get the viewport before they scroll. */
+.table-wrap { position: relative; width: min(1040px, calc(100vw - 32px)); max-width: none;
+  margin: 28px 50% 34px; transform: translateX(-50%); overflow-x: auto;
   overscroll-behavior-x: contain; scrollbar-width: thin; scrollbar-color: var(--line) transparent;
-  background: transparent; }
+  border: 1px solid var(--line); border-radius: 14px; background: var(--bg); }
 .table-wrap::-webkit-scrollbar { height: 10px; }
 .table-wrap::-webkit-scrollbar-thumb { background: var(--line); border-radius: 999px; }
 table { width: max-content; min-width: 100%; max-width: none; table-layout: auto; border-spacing: 0; border-collapse: collapse; }
