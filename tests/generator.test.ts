@@ -61,7 +61,7 @@ test("keeps tables simple and keyboard-scrollable", async () => {
   expect(html).not.toContain("\nli::marker { color: var(--line); }");
   expect(html).toContain('<div class="table-wrap" tabindex="0"><table>');
   expect(html).toContain("border-bottom: 1px solid color-mix");
-  expect(html).not.toContain("border-right: 1px solid var(--line)");
+  expect(html).not.toMatch(/\b(?:th|td)\b[^{}]*\{[^}]*border-right/);
 });
 
 test("supports explicit footer opt-outs", async () => {

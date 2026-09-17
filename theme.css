@@ -175,8 +175,17 @@ h2:hover .anchor, h3:hover .anchor, .anchor:focus { opacity: 1; }
   }
 /* copy-code button on Shiki blocks */
 pre.shiki { position: relative; }
-pre.mermaid { display: flex; justify-content: center; background: transparent; border: 0; padding: 0; }
-pre.mermaid:not([data-processed]) { visibility: hidden; min-height: 2rem; }
+/* Diagrams spill past the reading column like tables do, and fade in once drawn; until then the source holds the space, unseen. */
+pre.mermaid { opacity: 0; transition: opacity .3s ease; }
+pre.mermaid.ready { opacity: 1; }
+pre.mermaid:not(.failed) { display: flex; justify-content: center; width: min(1040px, calc(100vw - 32px)); margin: 28px 50%; transform: translateX(-50%);
+  background: transparent; border: 0; padding: 0; overflow: visible; color: transparent; cursor: zoom-in; }
+pre.mermaid.failed::before { content: "This diagram did not render. " attr(data-error); display: block; margin-bottom: 10px; color: var(--muted);
+  font: 14px/1.4 var(--font), system-ui, sans-serif; white-space: normal; }
+/* opened, a diagram fits the screen but never drops far below its drawn size: a wide one scrolls instead of shrinking, which is what keeps it readable on a phone */
+.lightbox-svg { display: flex; width: calc(100vw - 48px); height: calc(100vh - 96px); overflow: auto; }
+.lightbox-svg svg { flex: none; margin: auto; height: auto; }
+.lightbox-svg[hidden] { display: none; }
 .copy-code, .lightbox button { padding: 6px 10px; border: 1px solid var(--line); border-radius: 999px;
   background: var(--bg); color: var(--fg); font: 17px/1.4 var(--font), -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; cursor: pointer; }
 .copy-code { position: absolute; top: 8px; right: 8px; opacity: 0; }
@@ -338,3 +347,50 @@ body.graph-open-body { overflow: hidden; }
 @media (max-width: 600px) {
   .localmap-head { align-items: flex-start; flex-direction: column; }
 }
+
+/* floating sidebar: the home page's table of contents, a drawer on narrow screens and a rail on wide ones.
+   Everything that moves when it opens shares one duration and one curve, so the rail, the page and the
+   backdrop travel together instead of one snapping while the other slides. */
+:root { --sb-w: 272px; --sb-t: .32s; --sb-ease: cubic-bezier(.4, 0, .2, 1); }
+@media (prefers-reduced-motion: reduce) { :root { --sb-t: 0s; } }
+.sb-toggle { position: fixed; top: 14px; left: 14px; z-index: 41; view-transition-name: f2w-sb-toggle; }
+.sidebar { position: fixed; top: 0; left: 0; bottom: 0; width: var(--sb-w); box-sizing: border-box; padding: 64px 14px 28px 18px;
+  overflow-y: auto; overscroll-behavior: contain; background: var(--bg); border-right: 1px solid var(--line); z-index: 39;
+  font-size: 14.5px; line-height: 1.4; transform: translateX(-100%); visibility: hidden; will-change: transform;
+  transition: transform var(--sb-t) var(--sb-ease), visibility var(--sb-t), box-shadow var(--sb-t) var(--sb-ease);
+  view-transition-name: f2w-sidebar; }
+.sb-open .sidebar { transform: none; visibility: visible; box-shadow: 0 0 48px color-mix(in srgb, var(--fg) 18%, transparent); }
+.sb-backdrop { position: fixed; inset: 0; z-index: 38; background: color-mix(in srgb, var(--fg) 30%, transparent);
+  opacity: 0; visibility: hidden; transition: opacity var(--sb-t) ease, visibility var(--sb-t); }
+.sb-open .sb-backdrop { opacity: 1; visibility: visible; }
+.sb-home { display: block; font-weight: 700; color: var(--fg); text-decoration: none; margin: 0 0 14px 10px; }
+.sb-section { margin: 0 0 10px; }
+.sb-head { width: 100%; border: 0; background: none; cursor: pointer; padding: 6px 10px; font: inherit; font-size: 11.5px; font-weight: 700;
+  letter-spacing: .06em; text-transform: uppercase; text-align: left; color: var(--muted); display: flex; align-items: center; gap: 8px; }
+.sb-head::before, .sb-twist::before { content: ""; width: 5px; height: 5px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor;
+  transform: rotate(-45deg); transition: transform var(--sb-t) var(--sb-ease); }
+.sb-head[aria-expanded="true"]::before, .sb-twist[aria-expanded="true"]::before { transform: rotate(45deg); }
+/* a fold animates to its content's height: the grid row runs 0fr to 1fr, which height: auto cannot do */
+.sb-fold { display: grid; grid-template-rows: 0fr; visibility: hidden; transition: grid-template-rows var(--sb-t) var(--sb-ease), visibility var(--sb-t); }
+.sb-fold.open { grid-template-rows: 1fr; visibility: visible; }
+.sb-fold > ul { min-height: 0; overflow: hidden; }
+.sidebar ul { list-style: none; margin: 0; padding: 0; }
+.sb-children { margin-left: 14px; border-left: 1px solid var(--line); }
+.sb-row { display: flex; align-items: center; }
+.sb-row a { flex: 1; display: block; padding: 5px 10px; border-radius: 8px; color: var(--fg); text-decoration: none; transition: background-color .15s ease, color .15s ease; }
+.sb-row a:hover { background: color-mix(in srgb, var(--fg) 5%, transparent); }
+.sb-row a[aria-current="page"] { color: var(--accent); font-weight: 700; background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.sb-twist { width: 26px; height: 26px; border: 0; background: none; cursor: pointer; color: var(--muted); display: grid; place-items: center; }
+@media (min-width: 1200px) {
+  .sb-backdrop { display: none; }
+  .sb-open .sidebar { box-shadow: none; }
+  body { transition: padding-left var(--sb-t) var(--sb-ease); }
+  .table-wrap { transition: width var(--sb-t) var(--sb-ease); }
+  pre.mermaid:not(.failed) { transition: opacity .3s ease, width var(--sb-t) var(--sb-ease); }
+  .sb-open body { padding-left: var(--sb-w); }
+  .sb-open .table-wrap, .sb-open pre.mermaid:not(.failed) { width: min(1040px, calc(100vw - var(--sb-w) - 32px)); }
+}
+/* Moving between pages crossfades the reading column; the rail and the corner buttons are named so they hold still through it. */
+.topbar { view-transition-name: f2w-topbar; }
+@media (prefers-reduced-motion: no-preference) { @view-transition { navigation: auto; } }
+::view-transition-old(root), ::view-transition-new(root) { animation-duration: .2s; }

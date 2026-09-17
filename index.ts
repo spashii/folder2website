@@ -23,7 +23,7 @@ import { tmpdir } from "node:os";
 import { makeOgPng } from "./og.ts";
 
 const argv = process.argv.slice(2);
-const usage = "usage: folder2website <path-or-repo> [--out <dir>] [--token <T>] [--entry f.md ...] [--base-url <url>] [--manifest <path>] [--clone-dir <dir>] [--hide-generator-attribution] [--hide-footer-actions] [--hide-related-pages] [--hide-commit-info] [--port <n>] [--serve]";
+const usage = "usage: folder2website <path-or-repo> [--out <dir>] [--token <T>] [--entry f.md ...] [--base-url <url>] [--manifest <path>] [--clone-dir <dir>] [--hide-generator-attribution] [--hide-footer-actions] [--hide-related-pages] [--hide-commit-info] [--hide-sidebar] [--port <n>] [--serve]";
 if (argv.includes("-h") || argv.includes("--help")) {
   console.log(usage);
   process.exit(0);
@@ -44,6 +44,7 @@ const showGeneratorAttribution = !argv.includes("--hide-generator-attribution");
 const showFooterActions = !argv.includes("--hide-footer-actions");
 const showRelatedPages = !argv.includes("--hide-related-pages");
 const showCommitInfo = !argv.includes("--hide-commit-info");
+const showSidebar = !argv.includes("--hide-sidebar");
 const port = Number(flag("--port") ?? 4321);
 if (!Number.isInteger(port) || port < 1 || port > 65535) {
   console.error("--port must be an integer from 1 to 65535");
@@ -353,7 +354,7 @@ async function renderMd(src, mdRel, queue, seen, assets) {
   body = body.replace(/<p>((?:\s*<img[^>]*>\s*)+)<\/p>/g, (_m, imgs) =>
     `<div class="${(imgs.match(/<img/g) || []).length > 3 ? "shots" : "imgrow"}">${imgs}</div>`);
   body = markStandaloneActionLinks(body);
-  body = body.replace(/<p((?![^>]*\bactions\b)[^>]*)>/, (_m, attrs) => `<p${addHtmlClass(attrs, "tagline")}>`);
+  body = body.replace(/<p\b((?![^>]*\bactions\b)[^>]*)>/, (_m, attrs) => `<p${addHtmlClass(attrs, "tagline")}>`);
   ({ body } = enrichHeadings(body));
 
   for (const m of body.matchAll(/<img[^>]*\bsrc="([^"]+)"/g))
@@ -381,7 +382,57 @@ function authorHtml(commit) {
 }
 const commitLine = (label, commit) => commit ? `${label} ${relativeDate(commit.date)} by ${authorHtml(commit)}` : "";
 
-function pageHtml({ title, tagline, body, theme, extraCss, depth, og, canonical, isIndex, siteTitle, logo, logoDark, editUrl, updated, created, twin, themeColor, themeColorDark, hasManifest, lang, langSwitch, hreflang, nav, isHome, graphJson, relatedPages, outRel, comments, hasMermaid, showGeneratorAttribution, showFooterActions, showRelatedPages, showCommitInfo }) {
+// Diagrams take the site's own colours and font instead of a stock Mermaid theme, redraw when the
+// colour scheme flips, and fall back to their source when they fail to parse. The library is
+// fetched after the page script so its size never delays the rest of the page.
+const mermaidScript = (prefix) => `
+    <script>
+(() => {
+  const nodes = [...document.querySelectorAll("pre.mermaid")];
+  for (const n of nodes) n.dataset.src = n.textContent;
+  const probe = document.createElement("i"), cv = document.createElement("canvas");
+  probe.hidden = true; document.body.appendChild(probe); cv.width = cv.height = 1;
+  const ctx = cv.getContext("2d", { willReadFrequently: true });
+  // Mermaid shades colours with its own maths and wants plain hex, so each token is painted over the page background and read back as one solid pixel.
+  const resolve = (v) => { probe.style.color = v; return getComputedStyle(probe).color; };
+  const px = (color, alpha) => { ctx.globalAlpha = alpha; ctx.fillStyle = resolve(color); ctx.fillRect(0, 0, 1, 1); };
+  const mix = (color, alpha = 1) => { px("#fff", 1); px("var(--bg)", 1); px(color, alpha); return "#" + [...ctx.getImageData(0, 0, 1, 1).data].slice(0, 3).map((x) => x.toString(16).padStart(2, "0")).join(""); };
+  const vars = () => {
+    const bg = mix("var(--bg)"), fg = mix("var(--fg)"), soft = mix("var(--fg)", .06), edge = mix("var(--fg)", .32);
+    const [r, g, b] = [1, 3, 5].map((i) => parseInt(bg.slice(i, i + 2), 16));
+    return { darkMode: r * .299 + g * .587 + b * .114 < 128, background: bg, fontFamily: getComputedStyle(document.body).fontFamily, fontSize: "15px",
+      primaryColor: mix("var(--accent)", .14), primaryBorderColor: mix("var(--accent)", .6), primaryTextColor: fg,
+      secondaryColor: soft, secondaryBorderColor: edge, secondaryTextColor: fg, tertiaryColor: mix("var(--fg)", .03), tertiaryBorderColor: edge, tertiaryTextColor: fg,
+      textColor: fg, titleColor: fg, lineColor: mix("var(--fg)", .6), edgeLabelBackground: bg, clusterBkg: mix("var(--fg)", .03), clusterBorder: edge,
+      noteBkgColor: soft, noteBorderColor: edge, noteTextColor: fg };
+  };
+  let pass = 0;
+  const draw = async () => {
+    const mine = ++pass;
+    mermaid.initialize({ startOnLoad: false, theme: "base", themeVariables: vars() });
+    for (const [i, n] of nodes.entries()) {
+      const id = "mmd-" + mine + "-" + i;
+      try {
+        const { svg } = await mermaid.render(id, n.dataset.src);
+        if (mine !== pass) return;
+        n.innerHTML = svg; n.classList.remove("failed");
+      } catch (e) {
+        document.getElementById("d" + id)?.remove();
+        n.textContent = n.dataset.src; n.dataset.error = String(e?.message || e).split("\\n")[0]; n.classList.add("failed");
+      }
+      n.classList.add("ready");
+    }
+  };
+  const lib = document.createElement("script");
+  lib.src = "${prefix}mermaid.min.js";
+  lib.onload = () => document.fonts.ready.then(draw);
+  lib.onerror = () => { for (const n of nodes) n.classList.add("ready", "failed"); };
+  document.body.appendChild(lib);
+  matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => window.mermaid && draw());
+})();
+    </script>`;
+
+function pageHtml({ title, tagline, body, theme, extraCss, depth, og, canonical, isIndex, siteTitle, logo, logoDark, editUrl, updated, created, twin, themeColor, themeColorDark, hasManifest, lang, langSwitch, hreflang, nav, isHome, graphJson, relatedPages, outRel, comments, hasMermaid, showGeneratorAttribution, showFooterActions, showRelatedPages, showCommitInfo, sidebar }) {
   const prefix = "../".repeat(depth);
   // @import only works at the top of a stylesheet; custom CSS lands after the theme, so hoist its imports (web fonts) first.
   const imports = [];
@@ -468,8 +519,17 @@ for (const p of document.querySelectorAll("pre.shiki")) {
   const box = document.createElement("div"); box.className = "lightbox"; box.hidden = true;
   const img = document.createElement("img");
   const closeButton = document.createElement("button"); closeButton.type = "button"; closeButton.textContent = "Close"; closeButton.setAttribute("aria-label", "Close image preview");
-  box.append(img, closeButton); document.body.appendChild(box);
-  const close = () => { box.hidden = true; document.body.classList.remove("lightbox-open"); img.removeAttribute("src"); };
+  const stage = document.createElement("div"); stage.className = "lightbox-svg"; stage.hidden = true;
+  box.append(img, stage, closeButton); document.body.appendChild(box);
+  const close = () => { box.hidden = true; document.body.classList.remove("lightbox-open"); img.removeAttribute("src"); img.hidden = false; stage.hidden = true; stage.replaceChildren(); };
+  // A rendered diagram opens at full size: the inline one is scaled down to the page, which makes wide ones hard to read.
+  document.addEventListener("click", (e) => {
+    const svg = e.target.closest?.("pre.mermaid.ready:not(.failed)")?.querySelector("svg");
+    if (!svg || e.target.closest("a")) return;
+    const copy = svg.cloneNode(true), vb = svg.viewBox.baseVal; copy.removeAttribute("style"); copy.removeAttribute("height");
+    stage.replaceChildren(copy); img.hidden = true; stage.hidden = false; box.hidden = false; document.body.classList.add("lightbox-open"); closeButton.focus();
+    copy.setAttribute("width", Math.round(vb.width * Math.max(.75, Math.min(2, stage.clientWidth / vb.width, stage.clientHeight / vb.height))));
+  });
   const open = (source) => { img.src = source.currentSrc || source.src; img.alt = source.alt || ""; box.hidden = false; document.body.classList.add("lightbox-open"); closeButton.focus(); };
   for (const source of document.querySelectorAll(".wrap img:not(.logo)")) {
     source.tabIndex = 0; source.setAttribute("role", "button"); source.setAttribute("aria-label", "Open image preview");
@@ -891,6 +951,18 @@ for (const p of document.querySelectorAll("pre.shiki")) {
   addEventListener("hashchange", flash);
   if (location.hash) setTimeout(flash, 90);
 })();
+(() => {
+  const sb = document.getElementById("sidebar"), btn = document.querySelector(".sb-toggle"), back = document.querySelector(".sb-backdrop");
+  if (!sb || !btn) return;
+  const root = document.documentElement, KEY = "f2w.sidebar", wide = () => matchMedia("(min-width: 1200px)").matches;
+  const set = (open) => { root.classList.toggle("sb-open", open); btn.setAttribute("aria-expanded", String(open)); if (wide()) try { localStorage.setItem(KEY, open ? "open" : "closed"); } catch (e) {} };
+  btn.setAttribute("aria-expanded", String(root.classList.contains("sb-open")));
+  btn.onclick = () => set(!root.classList.contains("sb-open"));
+  back.onclick = () => set(false);
+  addEventListener("keydown", (e) => { if (e.key === "Escape" && !wide() && root.classList.contains("sb-open")) set(false); });
+  for (const t of sb.querySelectorAll(".sb-twist, .sb-head")) t.onclick = () => { const open = (t.closest(".sb-row") || t).nextElementSibling.classList.toggle("open"); t.setAttribute("aria-expanded", String(open)); };
+  addEventListener("pagehide", () => { try { sessionStorage.setItem("f2w.sb", JSON.stringify({ top: sb.scrollTop, closed: [...sb.querySelectorAll('.sb-head[aria-expanded="false"]')].map((h) => h.textContent) })); } catch (e) {} });
+})();
 </script>`;
   return `<!DOCTYPE html>
 <html lang="${esc(lang || "en")}">
@@ -904,9 +976,11 @@ for (const p of document.querySelectorAll("pre.shiki")) {
     <meta property="og:description" content="${esc(tagline)}" />
     ${ogTags}<style>
 ${css}
-    </style>
+    </style>${sidebar ? `
+    <script>try{if(matchMedia("(min-width: 1200px)").matches&&localStorage.getItem("f2w.sidebar")!=="closed")document.documentElement.classList.add("sb-open")}catch(e){}</script>` : ""}
   </head>
   <body>
+    ${sidebar ? `<button type="button" class="ds-toggle sb-toggle" aria-label="Pages" title="Pages" aria-controls="sidebar" aria-expanded="false"><svg width="17" height="17" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><line x1="2" y1="4" x2="14" y2="4"/><line x1="2" y1="8" x2="14" y2="8"/><line x1="2" y1="12" x2="14" y2="12"/></svg></button><div class="sb-backdrop"></div>${sidebar}` : ""}
     <main class="wrap">
       ${topRight}${home}${heroLogo}${body}${localGraph}${commentsHtml}${meta}
     </main>
@@ -914,13 +988,107 @@ ${css}
     ${graphModal}
     <script src="${prefix}d3-force.js"></script>
     <script src="${prefix}minisearch.min.js"></script>
-    ${hasMermaid ? `<script src="${prefix}mermaid.min.js"></script>
-    <script>mermaid.initialize({ startOnLoad: false, theme: matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "neutral" });
-    document.fonts.ready.then(() => mermaid.run());</script>
-    ` : ""}${script}
+    ${script}${hasMermaid ? mermaidScript(prefix) : ""}
   </body>
 </html>
 `;
+}
+
+// Sidebar: the home page is the table of contents. Its H2 headings are sections, the list
+// links under each heading are items (indentation nests them), a page is placed once, and
+// pages the home never lists are grouped by folder at the end. A sidebar.json beside the
+// home page replaces the whole tree: [{ title, items: [{ title?, path, children? }] }].
+function listLinksOf(pg, byMd) {
+  const out = [];
+  let section = "", inFence = false;
+  for (const raw of pg.src.split(/\r?\n/)) {
+    if (/^\s*```/.test(raw)) { inFence = !inFence; continue; }
+    if (inFence) continue;
+    const h = raw.match(/^##\s+(.+?)\s*#*\s*$/);
+    if (h) { section = h[1]; continue; }
+    const m = raw.match(/^(\s*)(?:[-*+]|\d+[.)])\s+\[([^\]]+)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/);
+    if (!m) continue;
+    const href = m[3].split("#")[0];
+    if (!isLocal(href) || !isPageLink(href)) continue;
+    const target = relAsset(pg.mdRel, href);
+    const page = target && byMd.get(posix.normalize(target));
+    if (!page) continue;
+    out.push({ section, title: m[2].replace(/\*\*/g, ""), page, level: Math.floor(m[1].replace(/\t/g, "  ").length / 2) });
+  }
+  return out;
+}
+async function buildSidebarTree(root, pages) {
+  const home = pages.find((p) => p.isIndex) || pages[0];
+  const byMd = new Map(pages.map((p) => [p.mdRel, p]));
+  const placed = new Set([home.outRel]);
+  const item = (title, page) => ({ title: title || page.title, outRel: page.outRel, children: [] });
+  const explicit = join(root, posix.dirname(home.mdRel), "sidebar.json");
+  if (existsSync(explicit)) {
+    const conv = (entries) => (entries || []).map((e) => {
+      const t = byMd.get(posix.normalize(e.path || ""));
+      if (!t) { console.warn(`  sidebar: unknown page ${e.path}`); return null; }
+      const it = item(e.title, t); it.children = conv(e.children); return it;
+    }).filter(Boolean);
+    return JSON.parse(await readText(explicit)).map((sec) => ({ title: sec.title || "", items: conv(sec.items) }));
+  }
+  const nest = (links, maxDepth) => {
+    const roots = [], stack = [];
+    for (const l of links) {
+      if (placed.has(l.page.outRel)) continue;
+      placed.add(l.page.outRel);
+      const it = item(l.title, l.page);
+      while (stack.length && stack[stack.length - 1].level >= l.level) stack.pop();
+      if (stack.length && stack.length < maxDepth) stack[stack.length - 1].item.children.push(it); else roots.push(it);
+      stack.push({ level: l.level, item: it });
+    }
+    return roots;
+  };
+  const sections = [];
+  for (const l of listLinksOf(home, byMd)) {
+    let sec = sections[sections.length - 1];
+    if (!sec || sec.title !== l.section) { sec = { title: l.section, links: [] }; sections.push(sec); }
+    sec.links.push(l);
+  }
+  const tree = sections.map((sec) => ({ title: sec.title, items: nest(sec.links, 3) }));
+  // A page listed by the home can list further pages of its own; those nest under it.
+  const deepen = (items, depth) => {
+    for (const it of items) {
+      if (depth >= 3) continue;
+      const pg = pages.find((p) => p.outRel === it.outRel);
+      it.children.push(...nest(listLinksOf(pg, byMd), 1));
+      deepen(it.children, depth + 1);
+    }
+  };
+  for (const sec of tree) deepen(sec.items, 1);
+  const groups = new Map();
+  for (const pg of pages) {
+    if (placed.has(pg.outRel)) continue;
+    const label = topLevelSection(pg.outRel);
+    if (!groups.has(label)) groups.set(label, []);
+    groups.get(label).push(item("", pg));
+  }
+  for (const [title, items] of groups) tree.push({ title, items });
+  return tree;
+}
+function sidebarHtml(tree, pg, siteTitle) {
+  const prefix = "../".repeat(pg.depth);
+  const isCur = (it) => it.outRel === pg.outRel;
+  const fold = (open, inner) => `<div class="sb-fold${open ? " open" : ""}">${inner}</div>`;
+  const contains = (it) => isCur(it) || it.children.some(contains);
+  const li = (it) => {
+    const open = it.children.length > 0 && contains(it);
+    const twist = it.children.length ? `<button type="button" class="sb-twist" aria-expanded="${open}" aria-label="Toggle ${esc(it.title)}"></button>` : "";
+    const kids = it.children.length ? fold(open, `<ul class="sb-children">${it.children.map(li).join("")}</ul>`) : "";
+    return `<li><div class="sb-row"><a href="${esc(prefix + it.outRel)}"${isCur(it) ? ' aria-current="page"' : ""}>${esc(it.title)}</a>${twist}</div>${kids}</li>`;
+  };
+  const sections = tree.map((sec) => {
+    const list = `<ul class="sb-list">${sec.items.map(li).join("")}</ul>`;
+    return sec.title ? `<section class="sb-section"><button type="button" class="sb-head" aria-expanded="true">${esc(sec.title)}</button>${fold(true, list)}</section>` : list;
+  }).join("");
+  // The restore runs inline, straight after the rail, so its scroll position and collapsed sections
+  // are back before the first paint of the next page rather than jumping once the page script runs.
+  const restore = `<script>(()=>{try{const sb=document.getElementById("sidebar"),s=JSON.parse(sessionStorage.getItem("f2w.sb")||"{}");for(const h of sb.querySelectorAll(".sb-head"))if((s.closed||[]).includes(h.textContent)){h.setAttribute("aria-expanded","false");h.nextElementSibling.classList.remove("open")}sb.scrollTop=s.top||0;sb.querySelector('[aria-current="page"]')?.scrollIntoView({block:"nearest"})}catch(e){}})()</script>`;
+  return `<nav class="sidebar" id="sidebar" aria-label="Pages"><a class="sb-home" href="${esc(prefix + "index.html")}"${pg.isIndex ? ' aria-current="page"' : ""}>${esc(siteTitle)}</a>${sections}</nav>${restore}`;
 }
 
 function detectReadme(root) {
@@ -1132,8 +1300,9 @@ async function build(root, { serve = false } = {}) {
     commentsOut = { ...commentsCfg, themeUrl };
   }
 
+  const sidebarTree = showSidebar ? await buildSidebarTree(root, pages.filter((p) => p.locale === defaultLocale)) : null;
   for (const pg of pages) {
-    await write(join(outDir, pg.outRel), pageHtml({ ...pg, theme, extraCss: override, siteTitle, themeColor: manifest?.background_color, themeColorDark: ext.dark?.bg, hasManifest: !!manifest, lang: pg.locale, langSwitch: switcherFor(pg), hreflang: hreflangFor(pg), nav: crumbsFor(pg), isHome: pg.outRel === localeHome[pg.locale], graphJson, comments: commentsOut, showGeneratorAttribution, showFooterActions, showRelatedPages, showCommitInfo }));
+    await write(join(outDir, pg.outRel), pageHtml({ ...pg, theme, sidebar: sidebarTree ? sidebarHtml(sidebarTree, pg, siteTitle) : "", extraCss: override, siteTitle, themeColor: manifest?.background_color, themeColorDark: ext.dark?.bg, hasManifest: !!manifest, lang: pg.locale, langSwitch: switcherFor(pg), hreflang: hreflangFor(pg), nav: crumbsFor(pg), isHome: pg.outRel === localeHome[pg.locale], graphJson, comments: commentsOut, showGeneratorAttribution, showFooterActions, showRelatedPages, showCommitInfo }));
     await write(join(outDir, pg.twinRel), pg.src.replace(/(\]\([^)]*?)README\.md/gi, "$1index.md"));
   }
   let copied = 0;

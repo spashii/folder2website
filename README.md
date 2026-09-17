@@ -60,8 +60,10 @@ GITHUB_TOKEN=github_pat_... bunx github:spashii/folder2website#main owner/repo
 ## Rendering
 
 - Shiki syntax highlighting.
-- Mermaid diagrams. Mermaid fences render in the browser. The library ships
-  only when a page uses one.
+- Mermaid diagrams. Mermaid fences render in the browser in the site's own
+  colours and font, follow light and dark, spill past the reading column like
+  tables, and open full size on click. A fence that fails to parse shows its
+  source and the error. The library ships only when a page uses one.
 - GitHub alerts.
 - Footnotes.
 - Heading anchors.
