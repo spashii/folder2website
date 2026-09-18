@@ -30,8 +30,8 @@ GITHUB_TOKEN=github_pat_... bunx github:spashii/folder2website#main owner/repo
 
 - `--out <dir>`: output directory. Default: `site`.
 - `--entry <file>`: seed page. Repeatable. Default: `README.md`.
-- `--base-url <url>`: production URL for canonical tags, sitemap, robots,
-  OG, and `llms.txt`.
+- `--base-url <url>`: production URL for canonical tags, sitemap, robots and
+  OG. Also makes the links in `llms.txt` absolute.
 - `--manifest <path>`: manifest path. Relative paths resolve from the target
   repo. Default: `manifest.json`.
 - `--clone-dir <dir>`: exact clone destination for a remote repo. Existing
@@ -54,8 +54,13 @@ GITHUB_TOKEN=github_pat_... bunx github:spashii/folder2website#main owner/repo
 - A markdown twin is written next to every page, such as `index.md` or
   `guide.md`.
 - Referenced assets are copied.
-- With `--base-url`, the output includes `sitemap.xml`, `robots.txt`,
-  `llms.txt`, and `llms-full.txt`.
+- `llms.txt` in the [llmstxt.org](https://llmstxt.org) format: site title,
+  summary, then the markdown twins listed per top-level folder. Translations
+  go under `Optional`. Links are relative unless `--base-url` is set.
+- `llms-full.txt`: every default-locale page inline, each under its title
+  with a `Source:` line.
+- Every page links its twin with `<link rel="alternate" type="text/markdown">`.
+- With `--base-url`, the output includes `sitemap.xml` and `robots.txt`.
 
 ## Rendering
 

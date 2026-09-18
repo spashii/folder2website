@@ -64,6 +64,19 @@ test("keeps tables simple and keyboard-scrollable", async () => {
   expect(html).not.toMatch(/\b(?:th|td)\b[^{}]*\{[^}]*border-right/);
 });
 
+test("writes llms.txt and llms-full.txt without a base URL", async () => {
+  const llms = await Bun.file(join(regularOut, "llms.txt")).text();
+  expect(llms).toStartWith("# Example docs\n\n> Use this guide to understand the example workflow.\n\n## Docs\n\n");
+  expect(llms).toContain("- [Example docs](index.md): Use this guide to understand the example workflow.");
+  expect(llms).toContain("- [Related guide](guide.md): This page links");
+  const full = await Bun.file(join(regularOut, "llms-full.txt")).text();
+  expect(full).toStartWith("# Example docs\nSource: index.html\n\n");
+  expect(full).toContain("\n\n# Related guide\nSource: guide.html\n\n");
+  expect(full.match(/^# Example docs$/gm)).toHaveLength(1);
+  const html = await Bun.file(join(regularOut, "guide.html")).text();
+  expect(html).toContain('<link rel="alternate" type="text/markdown" href="guide.md" />');
+});
+
 test("supports explicit footer opt-outs", async () => {
   const regular = await Bun.file(join(regularOut, "index.html")).text();
   const minimal = await Bun.file(join(minimalOut, "index.html")).text();

@@ -121,6 +121,38 @@ function docHeadingsAnchored(src) {
   });
   return out;
 }
+// --- llms.txt (llmstxt.org): H1, blockquote summary, then H2 file lists of `- [name](url): notes`.
+// Links point at the markdown twins. Without a base URL they stay relative to the site root, so
+// the files are still written for sites served from a subpath or straight from disk.
+const llmsUrl = (base, rel) => (base ? `${base}/` : "") + rel;
+function llmsTxt(pages, { siteTitle, base, defaultLocale }) {
+  const idx = pages.find((p) => p.isIndex) ?? pages[0];
+  const summary = (idx.tagline || "").replace(/\s+/g, " ").trim();
+  // A page that opens on a table or a list has no sentence to offer: try its first real paragraph, else leave the note off.
+  const plain = (s) => (s || "").replace(/\[([^\]]+)\]\([^)]*\)/g, "$1").replace(/[*`]/g, "").replace(/\s+/g, " ").trim();
+  const prose = (s) => (/^(\||>|[-*+] |\d+[.)] )/.test(s) ? "" : s);
+  const entry = (p) => { const note = ogTagline(prose(plain(p.tagline)) || prose(firstPara(p.src))); return `- [${p.title}](${llmsUrl(base, p.twinRel)})${note ? `: ${note}` : ""}`; };
+  const groups = new Map();
+  for (const p of pages) {
+    // "Optional" is the spec's name for links an agent may skip: a translation repeats a page it already has.
+    const label = p.locale !== defaultLocale ? "Optional" : p.outRel.includes("/") ? topLevelSection(p.outRel) : "Docs";
+    if (!groups.has(label)) groups.set(label, []);
+    groups.get(label).push(entry(p));
+  }
+  const optional = groups.get("Optional"); groups.delete("Optional");
+  if (optional) groups.set("Optional", optional); // the spec reads it last
+  const sections = [...groups].map(([label, items]) => `## ${label}\n\n${items.join("\n")}`);
+  return [`# ${siteTitle}`, summary && `> ${summary}`, ...sections].filter(Boolean).join("\n\n") + "\n";
+}
+// llms-full.txt is a convention, not part of the spec: every page inline, each under its own H1
+// with a Source line, so an agent can cite the page a passage came from.
+function llmsFullTxt(pages, { base, defaultLocale }) {
+  return pages.filter((p) => p.locale === defaultLocale).map((p) => {
+    const h1 = p.src.match(/^#\s+.+(?:\r?\n|$)/);
+    const body = (h1 ? p.src.slice(h1[0].length) : p.src).trim();
+    return `# ${p.title}\nSource: ${llmsUrl(base, p.isIndex && base ? "" : p.outRel)}\n\n${body}`;
+  }).join("\n\n") + "\n";
+}
 // a giscus theme CSS auto-derived from the manifest's brand colours (light + dark via color-mix)
 function giscusTheme(manifest) {
   const ext = manifest.readme_site || {}, d = ext.dark || {};
@@ -971,6 +1003,7 @@ for (const p of document.querySelectorAll("pre.shiki")) {
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>${esc(title)}</title>
     <meta name="description" content="${esc(tagline)}" />
+    <link rel="alternate" type="text/markdown" href="${esc(twin)}" />
     ${canon}${hreflang || ""}${tc}${mani}${icon}<meta property="og:type" content="website" />
     <meta property="og:title" content="${esc(title)}" />
     <meta property="og:description" content="${esc(tagline)}" />
@@ -1345,11 +1378,9 @@ async function build(root, { serve = false } = {}) {
     const urls = pages.map((p) => `  <url><loc>${base}/${p.isIndex ? "" : p.outRel}</loc></url>`).join("\n");
     await write(join(outDir, "sitemap.xml"), `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls}\n</urlset>\n`);
     await write(join(outDir, "robots.txt"), `User-agent: *\nAllow: /\nSitemap: ${base}/sitemap.xml\n`);
-    const idx = pages.find((p) => p.isIndex) ?? pages[0];
-    const docs = pages.map((p) => `- [${p.title}](${base}/${p.twinRel}): ${ogTagline(p.tagline || p.title)}`).join("\n");
-    await write(join(outDir, "llms.txt"), `# ${idx.title}\n\n> ${idx.tagline}\n\n## Docs\n\n${docs}\n`);
-    await write(join(outDir, "llms-full.txt"), pages.map((p) => p.src).join("\n\n---\n\n") + "\n");
   }
+  await write(join(outDir, "llms.txt"), llmsTxt(pages, { siteTitle, base, defaultLocale }));
+  await write(join(outDir, "llms-full.txt"), llmsFullTxt(pages, { base, defaultLocale }));
   return { pages: pages.length, assets: copied };
 }
 
