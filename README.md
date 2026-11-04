@@ -43,6 +43,15 @@ GITHUB_TOKEN=github_pat_... bunx github:spashii/folder2website#main owner/repo
   git log of each page.
 - `--hide-related-pages`: omit the generated related-page list. Markdown links
   still populate the knowledge graph.
+- `--check`: check the folder instead of building it. Exits 1 on errors. See
+  [Check](#check).
+- `--json`: with `--check`, print the findings as JSON.
+- `--review`: show review markers even before a `reviewed.json` exists. See
+  [Review](#review).
+- `--mark-reviewed <file.md>`: record that a person reviewed this page.
+  Repeatable. `all` marks every page.
+- `--reviewer <name>`: the name stored with a mark. Default: `git config
+  user.name`, then `$USER`.
 - `--serve`: live preview.
 - `--port <n>`: live preview port. Default: `4321`.
 
@@ -52,7 +61,9 @@ GITHUB_TOKEN=github_pat_... bunx github:spashii/folder2website#main owner/repo
 - Linked local `.md` files become `.html` pages.
 - Extensionless local text links like `LICENSE` become pages.
 - A markdown twin is written next to every page, such as `index.md` or
-  `guide.md`.
+  `guide.md`. It opens with a short quote pointing an agent at `llms.txt`, and
+  the page's review status when review is on. Copy as Markdown leaves that
+  quote out.
 - Referenced assets are copied.
 - `llms.txt` in the [llmstxt.org](https://llmstxt.org) format: site title,
   summary, then the markdown twins listed per top-level folder. Translations
@@ -60,7 +71,54 @@ GITHUB_TOKEN=github_pat_... bunx github:spashii/folder2website#main owner/repo
 - `llms-full.txt`: every default-locale page inline, each under its title
   with a `Source:` line.
 - Every page links its twin with `<link rel="alternate" type="text/markdown">`.
-- With `--base-url`, the output includes `sitemap.xml` and `robots.txt`.
+- With `--base-url`, the output includes `sitemap.xml` and `robots.txt`, and
+  every page carries schema.org JSON-LD (`WebSite` for the home page, `WebPage`
+  otherwise).
+
+## Check
+
+Every build prints what it found in the source; `--check` does only that,
+writes nothing, and exits 1 when there are errors. Links are judged from the
+rendered pages, and each finding names the markdown file, line and column.
+
+```sh
+bunx github:spashii/folder2website#main . --check
+bunx github:spashii/folder2website#main . --check --json
+```
+
+```text
+README.md:6:10  error  f2w/broken-link
+  "giude.md" does not exist
+  fix: did you mean "guide.md"?
+```
+
+Errors: `broken-link`, `broken-anchor` (only H2 and H3 headings get anchors),
+`missing-asset`, `plantuml-failed`, `sidebar-entry`. Warnings: `outside-folder`,
+`unlinked-file` (a markdown file no page links to; folders starting with `_`
+or `.` are skipped), `single-h1`, `heading-hierarchy`, `code-block-lang`.
+
+The JSON is `{ version, summary, diagnostics }`, plus `review` when review is
+on, so an agent can fix the findings and run it again.
+
+## Review
+
+For drafts an agent writes and a person reads. `reviewed.json`, beside the home
+page, records each reviewed page with a fingerprint of its text. A page with no
+entry, or whose text changed since, reads as awaiting review:
+
+- a line under its title, and for a changed page, what changed since the
+  review, down to the words;
+- a dot beside it in the sidebar;
+- a list of every page awaiting review on the home page;
+- a note in its markdown twin and in `llms.txt`, so agents know a person has
+  not checked it.
+
+Whitespace changes do not count. Nothing depends on git, so a plain folder works.
+
+```sh
+bunx github:spashii/folder2website#main . --mark-reviewed access.md
+bunx github:spashii/folder2website#main . --mark-reviewed all --reviewer Sameer
+```
 
 ## Rendering
 

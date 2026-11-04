@@ -6,6 +6,7 @@
 //   folder2website <path-or-repo> [--out <dir>] [--token <T>] [--entry f.md ...]
 //                                 [--base-url https://...] [--manifest <path>] [--clone-dir <dir>]
 //                                 [--hide-generator-attribution] [--hide-footer-actions] [--hide-related-pages]
+//                                 [--check [--json]] [--review] [--mark-reviewed <f.md|all> ...] [--reviewer <name>]
 //                                 [--port 4321] [--serve]
 //
 // ponytail: a small script, not a framework. Want search/sidebar/versioning?
@@ -17,27 +18,32 @@ import markedAlert from "marked-alert";
 import markedFootnote from "marked-footnote";
 import { markedSmartypants } from "marked-smartypants";
 import { codeToHtml } from "shiki";
-import { existsSync, mkdirSync, readdirSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, statSync } from "node:fs";
 import { dirname, join, resolve, relative, posix, extname } from "node:path";
 import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
 import { makeOgPng } from "./og.ts";
+import { checkLinks, createDiagnostics, formatJson, formatPretty, lintMarkdown, locate, markdownFiles, summarize, unlinkedFiles } from "./check.ts";
+import { REVIEW_FILE, loadReviews, mark, needsReview, reviewNote, reviewState, saveReviews } from "./review.ts";
 
 const argv = process.argv.slice(2);
-const usage = "usage: folder2website <path-or-repo> [--out <dir>] [--token <T>] [--entry f.md ...] [--base-url <url>] [--manifest <path>] [--clone-dir <dir>] [--hide-generator-attribution] [--hide-footer-actions] [--hide-related-pages] [--hide-commit-info] [--hide-sidebar] [--port <n>] [--serve]";
+const usage = "usage: folder2website <path-or-repo> [--out <dir>] [--token <T>] [--entry f.md ...] [--base-url <url>] [--manifest <path>] [--clone-dir <dir>] [--hide-generator-attribution] [--hide-footer-actions] [--hide-related-pages] [--hide-commit-info] [--hide-sidebar] [--check [--json]] [--review] [--mark-reviewed <f.md|all> ...] [--reviewer <name>] [--port <n>] [--serve]";
 if (argv.includes("-h") || argv.includes("--help")) {
   console.log(usage);
   process.exit(0);
 }
 const flag = (n) => { const i = argv.indexOf(n); return i >= 0 ? argv[i + 1] : undefined; };
-const flags = new Set(["--out", "--token", "--entry", "--base-url", "--manifest", "--clone-dir", "--port"]);
+const flags = new Set(["--out", "--token", "--entry", "--base-url", "--manifest", "--clone-dir", "--port", "--mark-reviewed", "--reviewer"]);
 const target = argv.filter((a, i) => !a.startsWith("-") && !flags.has(argv[i - 1]))[0];
 if (!target) {
   console.error(usage);
   process.exit(1);
 }
 const token = flag("--token") ?? process.env.GITHUB_TOKEN;
-const outDir = resolve(flag("--out") ?? "site");
+// --check builds into a scratch folder and reports; it never touches the real output.
+const checkOnly = argv.includes("--check");
+const checkJson = checkOnly && argv.includes("--json");
+const outDir = checkOnly ? mkdtempSync(join(tmpdir(), "folder2website-check-")) : resolve(flag("--out") ?? "site");
 const baseUrl = flag("--base-url")?.replace(/\/$/, "");
 const manifestArg = flag("--manifest");
 const clonePath = flag("--clone-dir") ? resolve(flag("--clone-dir")) : null;
@@ -52,6 +58,8 @@ if (!Number.isInteger(port) || port < 1 || port > 65535) {
   process.exit(1);
 }
 const seeds = argv.reduce((a, x, i) => (x === "--entry" && argv[i + 1] ? [...a, argv[i + 1]] : a), []);
+const toMark = argv.reduce((a, x, i) => (x === "--mark-reviewed" && argv[i + 1] ? [...a, argv[i + 1]] : a), []);
+const reviewFlag = argv.includes("--review") || toMark.length > 0;
 
 const here = import.meta.dir;
 const themePath = join(here, "theme.css");
@@ -132,7 +140,7 @@ function llmsTxt(pages, { siteTitle, base, defaultLocale }) {
   // A page that opens on a table or a list has no sentence to offer: try its first real paragraph, else leave the note off.
   const plain = (s) => (s || "").replace(/\[([^\]]+)\]\([^)]*\)/g, "$1").replace(/[*`]/g, "").replace(/\s+/g, " ").trim();
   const prose = (s) => (/^(\||>|[-*+] |\d+[.)] )/.test(s) ? "" : s);
-  const entry = (p) => { const note = ogTagline(prose(plain(p.tagline)) || prose(firstPara(p.src))); return `- [${p.title}](${llmsUrl(base, p.twinRel)})${note ? `: ${note}` : ""}`; };
+  const entry = (p) => { const note = [needsReview(p.review) ? "Awaiting review." : "", ogTagline(prose(plain(p.tagline)) || prose(firstPara(p.src)))].filter(Boolean).join(" "); return `- [${p.title}](${llmsUrl(base, p.twinRel)})${note ? `: ${note}` : ""}`; };
   const groups = new Map();
   for (const p of pages) {
     // "Optional" is the spec's name for links an agent may skip: a translation repeats a page it already has.
@@ -143,7 +151,8 @@ function llmsTxt(pages, { siteTitle, base, defaultLocale }) {
   const optional = groups.get("Optional"); groups.delete("Optional");
   if (optional) groups.set("Optional", optional); // the spec reads it last
   const sections = [...groups].map(([label, items]) => `## ${label}\n\n${items.join("\n")}`);
-  return [`# ${siteTitle}`, summary && `> ${summary}`, ...sections].filter(Boolean).join("\n\n") + "\n";
+  const reviewed = pages.some((p) => p.review) && 'Pages noted "Awaiting review." have not been checked by a person since they last changed.';
+  return [`# ${siteTitle}`, summary && `> ${summary}`, reviewed, ...sections].filter(Boolean).join("\n\n") + "\n";
 }
 // llms-full.txt is a convention, not part of the spec: every page inline, each under its own H1
 // with a Source line, so an agent can cite the page a passage came from.
@@ -218,6 +227,9 @@ const relAsset = (mdRel, p) => {
 // PlantUML is local and build-time only. Serialising renderer calls also keeps Docker
 // from starting a container for every fence at once. Cache raw SVGs, namespace on use.
 let plantumlTheme, plantumlSerial = Promise.resolve(), plantumlId = 0;
+// Findings for the current build, and the page being rendered so a failing fence can name its file.
+let diag = createDiagnostics();
+let rendering = { mdRel: "", raw: "" };
 const plantumlPending = new Map();
 const plantumlCache = join(tmpdir(), "folder2website-plantuml");
 const hash = (s) => createHash("sha256").update(s).digest("hex");
@@ -267,7 +279,7 @@ async function renderPlantuml(code) {
     return `<pre class="mermaid plantuml ready" tabindex="0">${svgs.join("")}</pre>`;
   } catch (e) {
     const error = String(e.message || e).split("\n")[0];
-    console.warn(`  PlantUML: ${error}`);
+    diag.report({ code: "plantuml-failed", severity: "error", file: rendering.mdRel, ...locate(rendering.raw, code.split("\n")[0]), message: `PlantUML: ${error}`, fix: { description: "the page shows the diagram source instead" } });
     return `<pre class="mermaid plantuml ready failed" data-error="${esc(error)}">${esc(code)}</pre>`;
   }
 }
@@ -420,6 +432,8 @@ function markStandaloneActionLinks(body) {
 }
 
 async function renderMd(src, mdRel, queue, seen, assets) {
+  const raw = src;
+  rendering = { mdRel, raw };
   src = src.trim();
   // folder2website is frontmatter-less by design; our docs use YAML frontmatter, so strip
   // and lightly parse a leading --- block and let title/description seed the page metadata.
@@ -448,12 +462,16 @@ async function renderMd(src, mdRel, queue, seen, assets) {
   body = body.replace(/<p\b((?![^>]*\bactions\b)[^>]*)>/, (_m, attrs) => `<p${addHtmlClass(attrs, "tagline")}>`);
   ({ body } = enrichHeadings(body));
 
+  // refs: every local link and image as rendered, for the link check
+  const refs = [];
   for (const m of body.matchAll(/<img[^>]*\bsrc="([^"]+)"/g))
-    if (isLocal(m[1])) { const a = relAsset(mdRel, m[1]); if (a) assets.add(a); }
+    if (isLocal(m[1])) { const a = relAsset(mdRel, m[1]); refs.push({ href: m[1], target: a, kind: "asset" }); if (a) assets.add(a); }
   const outLinks = new Set();
   body = body.replace(/(<a[^>]*\bhref=")([^"]+)(")/g, (full, a, href, b) => {
+    if (href.startsWith("#") && href.length > 1 && !/class="anchor"/.test(full)) refs.push({ href, target: mdRel, kind: "anchor" });
     if (!isLocal(href)) return full;
     const t = relAsset(mdRel, href);
+    refs.push({ href, target: t, kind: isPageLink(href) ? "page" : "asset" });
     if (!t) return full;
     if (isPageLink(href)) {
       if (!seen.has(t)) queue.push(t);
@@ -463,7 +481,9 @@ async function renderMd(src, mdRel, queue, seen, assets) {
     assets.add(t);
     return full;
   });
-  return { title, tagline, body, src, outLinks, hasMermaid: body.includes('<pre class="mermaid">') };
+  const ids = new Set([...body.matchAll(/\bid="([^"]+)"/g)].map((m) => m[1]));
+  lintMarkdown(raw, mdRel, diag.report);
+  return { title, tagline, body, src, raw, refs, ids, outLinks, hasMermaid: body.includes('<pre class="mermaid">') };
 }
 
 function authorHtml(commit) {
@@ -523,7 +543,30 @@ const mermaidScript = (prefix) => `
 })();
     </script>`;
 
-function pageHtml({ title, tagline, body, theme, extraCss, depth, og, canonical, isIndex, siteTitle, logo, logoDark, editUrl, updated, created, twin, themeColor, themeColorDark, hasManifest, lang, langSwitch, hreflang, nav, isHome, graphJson, relatedPages, outRel, comments, hasMermaid, showGeneratorAttribution, showFooterActions, showRelatedPages, showCommitInfo, sidebar }) {
+// Review markers: a line under the title of a page awaiting review, with what changed since the
+// last review; on the home page, the list of every page awaiting review.
+function reviewBadge(r) {
+  if (!needsReview(r)) return "";
+  if (r.state === "new") return `<p class="review-badge"><span class="review-dot"></span>Awaiting review</p>`;
+  const word = (w) => w.op === "+" ? `<ins>${esc(w.text)}</ins>` : w.op === "-" ? `<del>${esc(w.text)}</del>` : esc(w.text);
+  const row = (c) => c.op === "~"
+    ? `<div class="rd-mod"><span class="sr-only">Edited: </span>${c.words.map(word).join("")}</div>`
+    : `<div class="${c.op === "+" ? "rd-add" : "rd-del"}"><span class="sr-only">${c.op === "+" ? "Added: " : "Removed: "}</span>${esc(c.text)}</div>`;
+  const all = r.changes || [], shown = all.slice(0, 40);
+  const changes = shown.map(row).join("") + (all.length > shown.length ? `<p class="rd-more">and ${all.length - shown.length} more changed lines</p>` : "");
+  const diff = changes ? `<details class="review-diff"><summary>What changed since then</summary>${changes}</details>` : "";
+  return `<div class="review-badge"><p><span class="review-dot"></span>Changed since ${esc(r.by || "someone")} reviewed it ${relativeDate(r.at)}</p>${diff}</div>`;
+}
+function reviewQueue(pages) {
+  const waiting = pages.filter((p) => needsReview(p.review));
+  if (!waiting.length) return `<p class="review-queue review-clear">Every page is reviewed.</p>`;
+  const li = (p) => `<li><a href="${esc(p.outRel)}">${esc(p.title)}</a> <span class="rq-why">${p.review.state === "new" ? "new" : "changed"}</span></li>`;
+  return `<section class="review-queue" aria-label="Awaiting review"><p class="rq-title">Awaiting review (${waiting.length})</p><ul>${waiting.map(li).join("")}</ul></section>`;
+}
+const afterTitle = (body, html) => body.includes("</h1>") ? body.replace("</h1>", `</h1>\n${html}`) : html + body;
+const afterTagline = (body, html) => { const m = body.match(/<p class="tagline">[\s\S]*?<\/p>/); return m ? body.replace(m[0], m[0] + "\n" + html) : afterTitle(body, html); };
+
+function pageHtml({ title, tagline, body, theme, extraCss, depth, og, canonical, isIndex, siteTitle, logo, logoDark, editUrl, updated, created, twin, themeColor, themeColorDark, hasManifest, lang, langSwitch, hreflang, nav, isHome, graphJson, relatedPages, outRel, comments, hasMermaid, showGeneratorAttribution, showFooterActions, showRelatedPages, showCommitInfo, sidebar, review, jsonLd }) {
   const prefix = "../".repeat(depth);
   // @import only works at the top of a stylesheet; custom CSS lands after the theme, so hoist its imports (web fonts) first.
   const imports = [];
@@ -556,6 +599,7 @@ function pageHtml({ title, tagline, body, theme, extraCss, depth, og, canonical,
     : "";
   // Search and the knowledge graph live in the top-right controls, not the footer.
   const actions = showFooterActions ? `<div class="meta-actions">${[gitLink, copy].filter(Boolean).join(" · ")}</div>` : "";
+  if (review?.state === "reviewed") lines.unshift(`Reviewed ${relativeDate(review.at)} by ${esc(review.by || "unknown")}`);
   const metaBody = actions + lines.map((line) => `<div class="meta-line">${line}</div>`).join("") + madeWith;
   const meta = metaBody ? `\n      <footer class="meta">${metaBody}</footer>` : "";
   const graphIcon = `<svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M5.2 5.7 8 8m4.8-2.3L10 8m-1 2.2v2.3"/><circle cx="4" cy="4.5" r="2"/><circle cx="14" cy="4.5" r="2"/><circle cx="9" cy="14.5" r="2"/><circle cx="9" cy="9" r="1.7"/></svg>`;
@@ -595,7 +639,8 @@ function pageHtml({ title, tagline, body, theme, extraCss, depth, og, canonical,
       </section>` : "";
   const script = `<script>
 for (const b of document.querySelectorAll(".copy-md")) b.onclick = async () => {
-  await navigator.clipboard.writeText(await (await fetch(b.dataset.md)).text());
+  // the twin opens with a note for agents; a person pasting the page wants only the page
+  await navigator.clipboard.writeText((await (await fetch(b.dataset.md)).text()).replace(/^(?:> .*\\n)+\\n/, ""));
   const o = b.textContent; b.textContent = "Copied"; setTimeout(() => b.textContent = o, 900);
 };
 for (const p of document.querySelectorAll("pre.shiki")) {
@@ -1067,7 +1112,7 @@ for (const p of document.querySelectorAll("pre.shiki")) {
     ${canon}${hreflang || ""}${tc}${mani}${icon}<meta property="og:type" content="website" />
     <meta property="og:title" content="${esc(title)}" />
     <meta property="og:description" content="${esc(tagline)}" />
-    ${ogTags}<style>
+    ${ogTags}${jsonLd ? `<script type="application/ld+json">${jsonLd.replace(/</g, "\\u003c")}</script>\n    ` : ""}<style>
 ${css}
     </style>${sidebar ? `
     <script>try{if(matchMedia("(min-width: 1200px)").matches&&localStorage.getItem("f2w.sidebar")!=="closed")document.documentElement.classList.add("sb-open")}catch(e){}</script>` : ""}
@@ -1114,12 +1159,12 @@ async function buildSidebarTree(root, pages) {
   const home = pages.find((p) => p.isIndex) || pages[0];
   const byMd = new Map(pages.map((p) => [p.mdRel, p]));
   const placed = new Set([home.outRel]);
-  const item = (title, page) => ({ title: title || page.title, outRel: page.outRel, children: [] });
+  const item = (title, page) => ({ title: title || page.title, outRel: page.outRel, children: [], awaiting: needsReview(page.review) });
   const explicit = join(root, posix.dirname(home.mdRel), "sidebar.json");
   if (existsSync(explicit)) {
     const conv = (entries) => (entries || []).map((e) => {
       const t = byMd.get(posix.normalize(e.path || ""));
-      if (!t) { console.warn(`  sidebar: unknown page ${e.path}`); return null; }
+      if (!t) { diag.report({ code: "sidebar-entry", severity: "error", file: posix.join(posix.dirname(home.mdRel), "sidebar.json"), message: `"${e.path}" is not a page of the site`, fix: { description: "link the page from the site, or fix the path" } }); return null; }
       const it = item(e.title, t); it.children = conv(e.children); return it;
     }).filter(Boolean);
     return JSON.parse(await readText(explicit)).map((sec) => ({ title: sec.title || "", items: conv(sec.items) }));
@@ -1172,7 +1217,8 @@ function sidebarHtml(tree, pg, siteTitle) {
     const open = it.children.length > 0 && contains(it);
     const twist = it.children.length ? `<button type="button" class="sb-twist" aria-expanded="${open}" aria-label="Toggle ${esc(it.title)}"></button>` : "";
     const kids = it.children.length ? fold(open, `<ul class="sb-children">${it.children.map(li).join("")}</ul>`) : "";
-    return `<li><div class="sb-row"><a href="${esc(prefix + it.outRel)}"${isCur(it) ? ' aria-current="page"' : ""}>${esc(it.title)}</a>${twist}</div>${kids}</li>`;
+    const dot = it.awaiting ? '<span class="review-dot" title="Awaiting review"></span><span class="sr-only"> (awaiting review)</span>' : "";
+    return `<li><div class="sb-row"><a href="${esc(prefix + it.outRel)}"${isCur(it) ? ' aria-current="page"' : ""}>${esc(it.title)}${dot}</a>${twist}</div>${kids}</li>`;
   };
   const sections = tree.map((sec) => {
     const list = `<ul class="sb-list">${sec.items.map(li).join("")}</ul>`;
@@ -1181,7 +1227,8 @@ function sidebarHtml(tree, pg, siteTitle) {
   // The restore runs inline, straight after the rail, so its scroll position and collapsed sections
   // are back before the first paint of the next page rather than jumping once the page script runs.
   const restore = `<script>(()=>{try{const sb=document.getElementById("sidebar"),s=JSON.parse(sessionStorage.getItem("f2w.sb")||"{}");for(const h of sb.querySelectorAll(".sb-head"))if((s.closed||[]).includes(h.textContent)){h.setAttribute("aria-expanded","false");h.nextElementSibling.classList.remove("open")}sb.scrollTop=s.top||0;sb.querySelector('[aria-current="page"]')?.scrollIntoView({block:"nearest"})}catch(e){}})()</script>`;
-  return `<nav class="sidebar" id="sidebar" aria-label="Pages"><a class="sb-home" href="${esc(prefix + "index.html")}"${pg.isIndex ? ' aria-current="page"' : ""}>${esc(siteTitle)}</a>${sections}</nav>${restore}`;
+  const homeDot = tree.homeAwaiting ? '<span class="review-dot" title="Awaiting review"></span><span class="sr-only"> (awaiting review)</span>' : "";
+  return `<nav class="sidebar" id="sidebar" aria-label="Pages"><a class="sb-home" href="${esc(prefix + "index.html")}"${pg.isIndex ? ' aria-current="page"' : ""}>${esc(siteTitle)}${homeDot}</a>${sections}</nav>${restore}`;
 }
 
 function detectReadme(root) {
@@ -1189,6 +1236,7 @@ function detectReadme(root) {
 }
 
 async function build(root, { serve = false } = {}) {
+  diag = createDiagnostics();
   const theme = await readText(themePath);
   const git = await gitInfo(root);
   const manifest = await loadManifest(root);
@@ -1222,7 +1270,7 @@ async function build(root, { serve = false } = {}) {
     if (seen.has(mdRel)) continue;
     seen.add(mdRel);
     const abs = join(root, mdRel);
-    if (!existsSync(abs)) { console.warn(`  missing: ${mdRel}`); continue; }
+    if (!existsSync(abs)) continue; // reported by the link check, with the line that links here
     pages.push({ mdRel, ...(await renderMd(await readText(abs), mdRel, queue, seen, assets)) });
   }
   // i18n expansion: every page reachable in the default locale may have <name>.<locale>.md
@@ -1245,6 +1293,27 @@ async function build(root, { serve = false } = {}) {
     }
   }
   if (!pages.length) throw new Error("no pages - is there a README.md?");
+
+  const allMd = markdownFiles(root, outDir);
+  checkLinks(pages, (rel) => existsSync(join(root, rel)), allMd, diag.report);
+  unlinkedFiles(allMd, seen, (rel) => !!altRe && altRe.test(rel), diag.report);
+
+  // Review state is on once a reviewed.json exists, or when asked for. Marking happens before
+  // rendering, so the pages just marked already read as reviewed in this build.
+  let reviews = await loadReviews(root);
+  if (!reviews && reviewFlag) reviews = { version: 1, pages: {} };
+  if (toMark.length && checkOnly) console.warn(`  --mark-reviewed ignored: --check never writes`);
+  else if (toMark.length) {
+    const by = flag("--reviewer") || (await gitOut(["-C", root, "config", "user.name"])) || process.env.USER || "unknown";
+    const byRel = new Map(pages.map((p) => [p.mdRel, p]));
+    for (const want of toMark) {
+      const picked = want === "all" ? pages : [byRel.get(posix.normalize(want))].filter(Boolean);
+      if (!picked.length) console.warn(`  --mark-reviewed: ${want} is not a page of the site`);
+      for (const p of picked) mark(reviews, p.mdRel, p.raw, by);
+    }
+    await saveReviews(root, reviews);
+  }
+  if (reviews) for (const p of pages) p.review = reviewState(reviews, p.mdRel, p.raw);
 
   if (!pages.some((p) => outName(p.mdRel) === "index.html")) pages[0].asIndex = true;
   const siteTitle = cfg.title || (pages.find((p) => p.asIndex || outName(p.mdRel) === "index.html") ?? pages[0]).title;
@@ -1397,15 +1466,31 @@ async function build(root, { serve = false } = {}) {
   }
 
   const sidebarTree = showSidebar ? await buildSidebarTree(root, pages.filter((p) => p.locale === defaultLocale)) : null;
+  if (sidebarTree) sidebarTree.homeAwaiting = needsReview(pages.find((p) => p.isIndex)?.review);
+  const reviewing = pages.some((p) => p.review);
   for (const pg of pages) {
+    if (reviewing) {
+      pg.body = afterTitle(pg.body, reviewBadge(pg.review));
+      if (pg.isIndex) pg.body = afterTagline(pg.body, reviewQueue(pages.filter((p) => p.locale === pg.locale)));
+    }
+    pg.jsonLd = pg.canonical ? JSON.stringify({
+      "@context": "https://schema.org", "@type": pg.isIndex ? "WebSite" : "WebPage", name: pg.title,
+      ...(pg.tagline ? { description: ogTagline(pg.tagline) } : {}), url: pg.canonical, inLanguage: pg.locale,
+      ...(pg.og ? { image: pg.og } : {}),
+      ...(pg.isIndex ? {} : { isPartOf: { "@type": "WebSite", name: siteTitle, url: `${base}/` } }),
+      ...(pg.updated?.date ? { dateModified: pg.updated.date } : {}),
+    }) : null;
     await write(join(outDir, pg.outRel), pageHtml({ ...pg, theme, sidebar: sidebarTree ? sidebarHtml(sidebarTree, pg, siteTitle) : "", extraCss: override, siteTitle, themeColor: manifest?.background_color, themeColorDark: ext.dark?.bg, hasManifest: !!manifest, lang: pg.locale, langSwitch: switcherFor(pg), hreflang: hreflangFor(pg), nav: crumbsFor(pg), isHome: pg.outRel === localeHome[pg.locale], graphJson, comments: commentsOut, showGeneratorAttribution, showFooterActions, showRelatedPages, showCommitInfo }));
-    await write(join(outDir, pg.twinRel), pg.src.replace(/(\]\([^)]*?)README\.md/gi, "$1index.md"));
+    // Like Cloudflare's docs, each markdown twin opens by pointing an agent at the index, so one
+    // that lands on a single page can still find the rest. Copy as Markdown drops this note.
+    const index = base ? `${base}/llms.txt` : "../".repeat(pg.depth) + "llms.txt";
+    const note = [`> Documentation index: ${index}`, "> Fetch it to find every page of this site.", ...(pg.review ? [`> Review status: ${reviewNote(pg.review)}`] : [])].join("\n");
+    await write(join(outDir, pg.twinRel), note + "\n\n" + pg.src.replace(/(\]\([^)]*?)README\.md/gi, "$1index.md"));
   }
   let copied = 0;
   for (const a of assets) {
     const from = join(root, a);
-    if (existsSync(from)) { await copy(from, join(outDir, a)); copied++; }
-    else console.warn(`  missing asset: ${a}`);
+    if (existsSync(from)) { await copy(from, join(outDir, a)); copied++; } // a missing one is a check finding
   }
   if (cfg.logo && existsSync(join(root, cfg.logo))) await copy(join(root, cfg.logo), join(outDir, cfg.logo));
   if (cfg.logoDark && existsSync(join(root, cfg.logoDark))) await copy(join(root, cfg.logoDark), join(outDir, cfg.logoDark));
@@ -1444,7 +1529,11 @@ async function build(root, { serve = false } = {}) {
   }
   await write(join(outDir, "llms.txt"), llmsTxt(pages, { siteTitle, base, defaultLocale }));
   await write(join(outDir, "llms-full.txt"), llmsFullTxt(pages, { base, defaultLocale }));
-  return { pages: pages.length, assets: copied };
+  const review = reviewing ? {
+    awaiting: pages.filter((p) => needsReview(p.review)).map((p) => ({ file: p.mdRel, state: p.review.state })),
+    reviewed: pages.filter((p) => p.review?.state === "reviewed").length,
+  } : null;
+  return { pages: pages.length, assets: copied, diagnostics: diag.list, review };
 }
 
 // mtime signature of source files - the reload trigger, polled by the client.
@@ -1479,7 +1568,7 @@ if (argv.includes("--serve")) {
     const sig = sourceSig(root);
     if (sig === builtSig) return;
     building = true;
-    try { await build(root, { serve: true }); builtSig = sig; }
+    try { const r = await build(root, { serve: true }); builtSig = sig; if (r.diagnostics.length) console.warn(formatPretty(r.diagnostics)); }
     catch (e) { console.warn(`build: ${e.message}`); }
     finally { building = false; }
   };
@@ -1504,7 +1593,19 @@ if (argv.includes("--serve")) {
     },
   });
   console.log(`live preview: ${server.url} (edit any file, the page reloads)`);
+} else if (checkOnly) {
+  let r;
+  try { r = await build(root, { serve: true }); } finally { rmSync(outDir, { recursive: true, force: true }); }
+  const review = r.review ? { review: r.review } : {};
+  if (checkJson) console.log(formatJson(r.diagnostics, review));
+  else {
+    console.log(formatPretty(r.diagnostics));
+    if (r.review) console.log(`review: ${r.review.awaiting.length} awaiting, ${r.review.reviewed} reviewed (${REVIEW_FILE})`);
+  }
+  process.exit(summarize(r.diagnostics).errors ? 1 : 0);
 } else {
   const r = await build(root);
+  if (r.diagnostics.length) console.warn(formatPretty(r.diagnostics));
+  if (r.review) console.log(`review: ${r.review.awaiting.length} awaiting, ${r.review.reviewed} reviewed (${REVIEW_FILE})`);
   console.log(`done: ${outDir} (${r.pages} pages, ${r.assets} assets)`);
 }
