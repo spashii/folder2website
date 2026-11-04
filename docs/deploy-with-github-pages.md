@@ -8,6 +8,8 @@ Replace:
 - `REPO` with your repo name.
 - `DOMAIN` with your custom domain.
 
+Without a custom domain the site lives at `https://OWNER.github.io/REPO/`: pass that as `--base-url`, leave out the `site/CNAME` line, and skip the domain and DNS steps. This repo's own site works that way, at https://spashii.github.io/folder2website/.
+
 ## Workflow
 
 Create `.github/workflows/pages.yml`:
@@ -80,12 +82,6 @@ Add a CNAME at your DNS provider:
 
 ```txt
 DOMAIN -> OWNER.github.io.
-```
-
-Example for this repo:
-
-```txt
-folder2website.tangerinetech.eu -> spashii.github.io.
 ```
 
 Verify:

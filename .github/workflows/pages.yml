@@ -21,8 +21,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
       - run: bun install --frozen-lockfile
-      - run: bun index.ts . --out site --base-url https://folder2website.tangerinetech.eu
-      - run: printf 'folder2website.tangerinetech.eu\n' > site/CNAME
+      - run: bun index.ts . --out site --base-url https://spashii.github.io/folder2website
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
