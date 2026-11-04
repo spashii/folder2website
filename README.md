@@ -70,6 +70,15 @@ GITHUB_TOKEN=github_pat_... bunx github:spashii/folder2website#main owner/repo
   tables, and open full size on click. A fence that fails to parse shows its
   source and the error. The library ships only when a page uses one.
 - GitHub alerts.
+- PlantUML activity (including swimlanes) and state diagrams in fenced
+  `plantuml` blocks. SVGs render locally at build time in light and dark site
+  colours, share Mermaid's click-to-expand viewer, and scroll horizontally
+  when wide. Renderer order: `FOLDER2WEBSITE_PLANTUML` (a shell command taking
+  PlantUML on stdin and emitting SVG on stdout), `plantuml -tsvg -pipe` on
+  PATH, then `docker run --rm -i plantuml/plantuml -tsvg -pipe`. No remote
+  rendering service is used. Successful SVGs are cached by content hash in
+  the system temp directory; renderer calls run one at a time. Failures show
+  the source with an error note and print a warning without stopping the build.
 - Footnotes.
 - Heading anchors.
 - Table of contents.

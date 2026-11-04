@@ -151,3 +151,80 @@ test("reserves laptop space for graph details", async () => {
   expect(html).toContain('const overlay = W < 800 && !detail.hidden');
   expect(html).toContain('max-height: min(38vh, 360px)');
 });
+
+test("renders themed PlantUML SVGs locally, namespaces IDs, and reuses the cache", async () => {
+  const docs = join(work, "plantuml"), out = join(work, "plantuml-out");
+  const renderer = join(work, "renderer.ts"), calls = join(work, "renderer-calls");
+  await Bun.write(renderer, `const source = await new Response(Bun.stdin.stream()).text();
+const calls = Bun.file(${JSON.stringify(calls)});
+await Bun.write(calls, (await calls.exists() ? await calls.text() : "") + source + "\\n---\\n");
+console.log('<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="200" viewBox="0 0 1200 200"><defs><linearGradient id="paint" /></defs><g id="node" fill="url(#paint)"><a href="#node"><text>Diagram</text></a></g></svg>');
+`);
+  const activity = "@startuml\n|Customer|\nstart\n:Request;\n|App|\nif (Ready?) then (yes)\n:Send;\nelse (no)\n:Wait;\nendif\nstop\n@enduml";
+  await Bun.write(join(docs, "README.md"), `# Diagrams\n\nExample workflow.\n\n\`\`\`plantuml\n${activity}\n\`\`\`\n\n\`\`\`plantuml\n${activity}\n\`\`\`\n\n\`\`\`plantuml\n[*] --> Ready\nReady --> [*]\n\`\`\`\n`);
+  await Bun.write(join(docs, "manifest.json"), JSON.stringify({ background_color: "#ffffff", theme_color: "#123456", readme_site: { fg: "#222222", font: "Example Font", dark: { bg: "#111111", fg: "#eeeeee", accent: "#abcdef" } } }));
+  const env = { ...process.env, FOLDER2WEBSITE_PLANTUML: `"${process.execPath}" "${renderer}"` };
+  await $`${process.execPath} run ${generator} ${docs} --out ${out}`.env(env).quiet();
+  const html = await Bun.file(join(out, "index.html")).text();
+  expect(html.match(/<pre class="mermaid plantuml ready"/g)).toHaveLength(3);
+  expect(html.match(/<svg xmlns=/g)).toHaveLength(6);
+  expect(html.match(/class="plantuml-light"/g)).toHaveLength(3);
+  expect(html.match(/class="plantuml-dark"/g)).toHaveLength(3);
+  const ids = [...html.matchAll(/id="(puml-[^"]+)"/g)].map((m) => m[1]);
+  expect(new Set(ids).size).toBe(ids.length);
+  expect(html).toContain('fill="url(#puml-1-0-paint)"');
+  expect(html).toContain('href="#puml-1-0-node"');
+  expect(html).toContain('pre.plantuml:not(.failed) { display: block; overflow-x: auto;');
+  expect(html).toContain('matchMedia("(prefers-color-scheme: dark)").matches ? ".plantuml-dark svg"');
+  expect(await Bun.file(join(out, "mermaid.min.js")).exists()).toBe(false);
+  const inputs = await Bun.file(calls).text();
+  expect(inputs.match(/^---$/gm)).toHaveLength(4);
+  expect(inputs).toContain('skinparam defaultFontName "Example Font"');
+  expect(inputs).toContain("skinparam backgroundColor #ffffff");
+  expect(inputs).toContain("skinparam backgroundColor #111111");
+  expect(inputs).toContain("skinparam stateBorderColor #abcdef");
+  expect(inputs).toContain("skinparam activityBorderColor #123456");
+  await $`${process.execPath} run ${generator} ${docs} --out ${out}`.env(env).quiet();
+  expect(await Bun.file(calls).text()).toBe(inputs);
+  await Bun.write(join(docs, "README.md"), (await Bun.file(join(docs, "README.md")).text()) + '\n```mermaid\ngraph TD\nA --> B\n```\n');
+  await $`${process.execPath} run ${generator} ${docs} --out ${out}`.env(env).quiet();
+  const mixed = await Bun.file(join(out, "index.html")).text();
+  expect(mixed).toContain('document.querySelectorAll("pre.mermaid:not(.plantuml)")');
+  expect(mixed).toContain('<pre class="mermaid">graph TD');
+  expect(await Bun.file(join(out, "mermaid.min.js")).exists()).toBe(true);
+  expect(await Bun.file(calls).text()).toBe(inputs);
+}, 30000);
+
+test("PlantUML failures preserve escaped source and warn once per fence", async () => {
+  const docs = join(work, "plantuml-failure"), out = join(work, "plantuml-failure-out");
+  const renderer = join(work, "failed-renderer.ts");
+  await Bun.write(renderer, 'console.error("deliberate renderer failure"); process.exit(1);');
+  await Bun.write(join(docs, "README.md"), '# Failure\n\nDiagram example.\n\n```plantuml\n:Keep <source> & text;\n```\n');
+  const env = { ...process.env, FOLDER2WEBSITE_PLANTUML: `"${process.execPath}" "${renderer}"` };
+  const result = await $`${process.execPath} run ${generator} ${docs} --out ${out}`.env(env).quiet();
+  expect(result.stderr.toString().match(/PlantUML:/g)).toHaveLength(1);
+  const html = await Bun.file(join(out, "index.html")).text();
+  expect(html).toContain('class="mermaid plantuml ready failed" data-error="deliberate renderer failure"');
+  expect(html).toContain(":Keep &lt;source> &amp; text;");
+  expect(html).toContain('content: "This diagram did not render. " attr(data-error)');
+});
+
+test("PlantUML rejects non-SVG output and handles a missing renderer", async () => {
+  const docs = join(work, "plantuml-invalid"), out = join(work, "plantuml-invalid-out");
+  const renderer = join(work, "invalid-renderer.ts");
+  await Bun.write(renderer, 'console.log("not an SVG");');
+  await Bun.write(join(docs, "README.md"), '# Invalid\n\nDiagram example.\n\n```plantuml\nstart\nstop\n```\n');
+  for (const command of [`"${process.execPath}" "${renderer}"`, "folder2website-missing-renderer"]) {
+    const env = { ...process.env, FOLDER2WEBSITE_PLANTUML: command };
+    const result = await $`${process.execPath} run ${generator} ${docs} --out ${out}`.env(env).quiet();
+    expect(result.stderr.toString().match(/PlantUML:/g)).toHaveLength(1);
+    const html = await Bun.file(join(out, "index.html")).text();
+    expect(html).toContain('class="mermaid plantuml ready failed"');
+    expect(html).toContain("start\nstop</pre>");
+  }
+  const env = { ...process.env, PATH: join(work, "empty-path") };
+  delete env.FOLDER2WEBSITE_PLANTUML;
+  const result = await $`${process.execPath} run ${generator} ${docs} --out ${out}`.env(env).quiet();
+  expect(result.stderr.toString().match(/PlantUML:/g)).toHaveLength(1);
+  expect(await Bun.file(join(out, "index.html")).text()).toContain('data-error="No local PlantUML renderer found"');
+});

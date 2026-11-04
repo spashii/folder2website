@@ -20,6 +20,7 @@ import { codeToHtml } from "shiki";
 import { existsSync, mkdirSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, resolve, relative, posix, extname } from "node:path";
 import { tmpdir } from "node:os";
+import { createHash } from "node:crypto";
 import { makeOgPng } from "./og.ts";
 
 const argv = process.argv.slice(2);
@@ -214,6 +215,63 @@ const relAsset = (mdRel, p) => {
   return r.startsWith("..") ? null : r;
 };
 
+// PlantUML is local and build-time only. Serialising renderer calls also keeps Docker
+// from starting a container for every fence at once. Cache raw SVGs, namespace on use.
+let plantumlTheme, plantumlSerial = Promise.resolve(), plantumlId = 0;
+const plantumlPending = new Map();
+const plantumlCache = join(tmpdir(), "folder2website-plantuml");
+const hash = (s) => createHash("sha256").update(s).digest("hex");
+function plantumlColours(theme, manifest, ext) {
+  const roots = [...theme.matchAll(/:root\s*\{([^}]+)\}/g)].slice(0, 2).map((m) =>
+    Object.fromEntries([...m[1].matchAll(/--(bg|fg|accent|font):\s*([^;]+);/g)].map((v) => [v[1], v[2].trim()])));
+  const light = { ...roots[0], bg: manifest?.background_color || roots[0]?.bg, fg: ext.fg || roots[0]?.fg, accent: manifest?.theme_color || roots[0]?.accent, font: ext.font || roots[0]?.font };
+  return [light, { ...light, ...roots[1], ...ext.dark, font: light.font }].map((c) => ({
+    bg: Bun.color(c.bg, "hex") || "#ffffff", fg: Bun.color(c.fg, "hex") || "#1f2328",
+    accent: Bun.color(c.accent, "hex") || "#0969da", font: String(c.font || "sans-serif").replace(/["'\r\n]/g, ""),
+  }));
+}
+function plantumlSource(code, c) {
+  const skin = `skinparam backgroundColor ${c.bg}\nskinparam defaultFontName "${c.font}"\nskinparam defaultFontSize 15\nskinparam defaultFontColor ${c.fg}\nskinparam ArrowColor ${c.fg}\nskinparam activityBackgroundColor ${c.bg}\nskinparam activityBorderColor ${c.accent}\nskinparam activityDiamondBackgroundColor ${c.bg}\nskinparam activityDiamondBorderColor ${c.accent}\nskinparam activityStartColor ${c.accent}\nskinparam activityEndColor ${c.accent}\nskinparam activityBarColor ${c.accent}\nskinparam swimlaneBorderColor ${c.fg}\nskinparam swimlaneTitleBackgroundColor ${c.bg}\nskinparam swimlaneTitleFontColor ${c.fg}\nskinparam stateBackgroundColor ${c.bg}\nskinparam stateBorderColor ${c.accent}\nskinparam stateStartColor ${c.accent}\nskinparam stateEndColor ${c.accent}\nskinparam noteBackgroundColor ${c.bg}\nskinparam noteBorderColor ${c.accent}`;
+  return /^\s*@startuml\b/m.test(code) ? code.replace(/^\s*@startuml[^\n]*/m, (m) => `${m}\n${skin}`) : `@startuml\n${skin}\n${code}\n@enduml`;
+}
+async function plantumlSvg(source) {
+  const custom = process.env.FOLDER2WEBSITE_PLANTUML;
+  const cmd = custom ? ["sh", "-c", custom] : Bun.which("plantuml") ? ["plantuml", "-tsvg", "-pipe"] : Bun.which("docker") ? ["docker", "run", "--rm", "-i", "plantuml/plantuml", "-tsvg", "-pipe"] : null;
+  if (!cmd) throw new Error("No local PlantUML renderer found");
+  const key = hash(JSON.stringify(["v1", cmd, source]));
+  if (plantumlPending.has(key)) return plantumlPending.get(key);
+  const job = plantumlSerial.then(async () => {
+    const path = join(plantumlCache, `${key}.svg`);
+    if (await Bun.file(path).exists()) return readText(path);
+    const p = Bun.spawn(cmd, { stdin: new Blob([source]), stdout: "pipe", stderr: "pipe" });
+    const [out, err, status] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text(), p.exited]);
+    const svg = out.match(/<svg\b[\s\S]*?<\/svg>/)?.[0];
+    if (status !== 0 || !svg || /Syntax Error|An error has occurr?ed/i.test(out)) throw new Error(err.trim().split("\n")[0] || `Renderer failed (exit ${status}${svg ? "" : ", no SVG"})`);
+    await write(path, svg);
+    return svg;
+  });
+  plantumlSerial = job.then(() => {}, () => {});
+  plantumlPending.set(key, job);
+  try { return await job; } catch (e) { plantumlPending.delete(key); throw e; }
+}
+function plantumlIds(svg, prefix) {
+  const ids = new Map([...svg.matchAll(/\bid=["']([^"']+)["']/g)].map((m) => [m[1], `${prefix}-${m[1]}`]));
+  return svg.replace(/\bid=(["'])([^"']+)\1/g, (m, q, id) => `id=${q}${ids.get(id)}${q}`)
+    .replace(/(url\(\s*["']?#|(?:href|xlink:href)=["']#)([^\s"')]+)(["']?\)|["'])/g, (m, a, id, b) => ids.has(id) ? a + ids.get(id) + b : m);
+}
+async function renderPlantuml(code) {
+  const id = `puml-${++plantumlId}`;
+  try {
+    const svgs = [];
+    for (const [i, c] of plantumlTheme.entries()) svgs.push(`<span class="plantuml-${i ? "dark" : "light"}">${plantumlIds(await plantumlSvg(plantumlSource(code, c)), `${id}-${i}`)}</span>`);
+    return `<pre class="mermaid plantuml ready" tabindex="0">${svgs.join("")}</pre>`;
+  } catch (e) {
+    const error = String(e.message || e).split("\n")[0];
+    console.warn(`  PlantUML: ${error}`);
+    return `<pre class="mermaid plantuml ready failed" data-error="${esc(error)}">${esc(code)}</pre>`;
+  }
+}
+
 // --- marked plugins: smart typography, GitHub alerts, footnotes, Shiki ---
 marked.use(markedSmartypants());
 marked.use(markedAlert());
@@ -225,6 +283,7 @@ marked.use(markedShiki({
     // <pre class="mermaid"> shape mermaid.js looks for. The script is only
     // included on pages that produced one (see hasMermaid in renderMd).
     if (lang === "mermaid") return `<pre class="mermaid">${esc(code)}</pre>`;
+    if (lang === "plantuml") return renderPlantuml(code);
     for (const l of [lang, "text"]) {
       try {
         const out = await codeToHtml(code, { lang: l || "text", ...SHIKI });
@@ -420,7 +479,7 @@ const commitLine = (label, commit) => commit ? `${label} ${relativeDate(commit.d
 const mermaidScript = (prefix) => `
     <script>
 (() => {
-  const nodes = [...document.querySelectorAll("pre.mermaid")];
+  const nodes = [...document.querySelectorAll("pre.mermaid:not(.plantuml)")];
   for (const n of nodes) n.dataset.src = n.textContent;
   const probe = document.createElement("i"), cv = document.createElement("canvas");
   probe.hidden = true; document.body.appendChild(probe); cv.width = cv.height = 1;
@@ -556,7 +615,8 @@ for (const p of document.querySelectorAll("pre.shiki")) {
   const close = () => { box.hidden = true; document.body.classList.remove("lightbox-open"); img.removeAttribute("src"); img.hidden = false; stage.hidden = true; stage.replaceChildren(); };
   // A rendered diagram opens at full size: the inline one is scaled down to the page, which makes wide ones hard to read.
   document.addEventListener("click", (e) => {
-    const svg = e.target.closest?.("pre.mermaid.ready:not(.failed)")?.querySelector("svg");
+    const diagram = e.target.closest?.("pre.mermaid.ready:not(.failed)");
+    const svg = diagram?.querySelector(diagram.classList.contains("plantuml") ? (matchMedia("(prefers-color-scheme: dark)").matches ? ".plantuml-dark svg" : ".plantuml-light svg") : "svg");
     if (!svg || e.target.closest("a")) return;
     const copy = svg.cloneNode(true), vb = svg.viewBox.baseVal; copy.removeAttribute("style"); copy.removeAttribute("height");
     stage.replaceChildren(copy); img.hidden = true; stage.hidden = false; box.hidden = false; document.body.classList.add("lightbox-open"); closeButton.focus();
@@ -1133,6 +1193,9 @@ async function build(root, { serve = false } = {}) {
   const git = await gitInfo(root);
   const manifest = await loadManifest(root);
   const ext = manifest?.readme_site || {};
+  plantumlTheme = plantumlColours(theme, manifest, ext);
+  plantumlPending.clear();
+  plantumlId = 0;
   // --- i18n: page.md is the default locale; page.<locale>.md is a translation twin.
   // Configure via manifest.readme_site.i18n = { defaultLocale, locales: [{code,label}] }.
   const i18n = ext.i18n || {};

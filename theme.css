@@ -182,6 +182,15 @@ pre.mermaid:not(.failed) { display: flex; justify-content: center; width: min(10
   background: transparent; border: 0; padding: 0; overflow: visible; color: transparent; cursor: zoom-in; }
 pre.mermaid.failed::before { content: "This diagram did not render. " attr(data-error); display: block; margin-bottom: 10px; color: var(--muted);
   font: 14px/1.4 var(--font), system-ui, sans-serif; white-space: normal; }
+pre.plantuml:not(.failed) { display: block; overflow-x: auto; color: var(--fg); }
+pre.plantuml > span { width: max-content; min-width: 100%; }
+pre.plantuml svg { display: block; margin: auto; max-width: none; }
+pre.plantuml .plantuml-light { display: block; }
+pre.plantuml .plantuml-dark { display: none; }
+@media (prefers-color-scheme: dark) {
+  pre.plantuml .plantuml-light { display: none; }
+  pre.plantuml .plantuml-dark { display: block; }
+}
 /* opened, a diagram fits the screen but never drops far below its drawn size: a wide one scrolls instead of shrinking, which is what keeps it readable on a phone */
 .lightbox-svg { display: flex; width: calc(100vw - 48px); height: calc(100vh - 96px); overflow: auto; }
 .lightbox-svg svg { flex: none; margin: auto; height: auto; }
