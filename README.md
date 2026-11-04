@@ -46,10 +46,9 @@ GITHUB_TOKEN=github_pat_... bunx github:spashii/folder2website#main owner/repo
 - `--check`: check the folder instead of building it. Exits 1 on errors. See
   [Check](#check).
 - `--json`: with `--check`, print the findings as JSON.
-- `--review`: show review markers even before a `reviewed.json` exists. See
-  [Review](#review).
-- `--mark-reviewed <file.md>`: record that a person reviewed this page.
-  Repeatable. `all` marks every page.
+- `--review`: show review markers. Off by default. See [Review](#review).
+- `--mark-reviewed <file.md>`: record that a person reviewed this page, with
+  or without `--review`. Repeatable. `all` marks every page.
 - `--reviewer <name>`: the name stored with a mark. Default: `git config
   user.name`, then `$USER`.
 - `--serve`: live preview.
@@ -97,14 +96,15 @@ Errors: `broken-link`, `broken-anchor` (only H2 and H3 headings get anchors),
 `unlinked-file` (a markdown file no page links to; folders starting with `_`
 or `.` are skipped), `single-h1`, `heading-hierarchy`, `code-block-lang`.
 
-The JSON is `{ version, summary, diagnostics }`, plus `review` when review is
-on, so an agent can fix the findings and run it again.
+The JSON is `{ version, summary, diagnostics }`, plus `review` with
+`--review`, so an agent can fix the findings and run it again.
 
 ## Review
 
-For drafts an agent writes and a person reads. `reviewed.json`, beside the home
-page, records each reviewed page with a fingerprint of its text. A page with no
-entry, or whose text changed since, reads as awaiting review:
+For drafts an agent writes and a person reads. Off by default; `--review` turns
+it on. `reviewed.json`, beside the home page, records each reviewed page with a
+fingerprint of its text. A page with no entry, or whose text changed since,
+reads as awaiting review:
 
 - a line under its title, and for a changed page, what changed since the
   review, down to the words;
@@ -116,7 +116,8 @@ entry, or whose text changed since, reads as awaiting review:
 Whitespace changes do not count. Nothing depends on git, so a plain folder works.
 
 ```sh
-bunx github:spashii/folder2website#main . --mark-reviewed access.md
+bunx github:spashii/folder2website#main . --review
+bunx github:spashii/folder2website#main . --review --mark-reviewed access.md
 bunx github:spashii/folder2website#main . --mark-reviewed all --reviewer Sameer
 ```
 

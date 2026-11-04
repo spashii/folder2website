@@ -59,7 +59,7 @@ if (!Number.isInteger(port) || port < 1 || port > 65535) {
 }
 const seeds = argv.reduce((a, x, i) => (x === "--entry" && argv[i + 1] ? [...a, argv[i + 1]] : a), []);
 const toMark = argv.reduce((a, x, i) => (x === "--mark-reviewed" && argv[i + 1] ? [...a, argv[i + 1]] : a), []);
-const reviewFlag = argv.includes("--review") || toMark.length > 0;
+const reviewFlag = argv.includes("--review");
 
 const here = import.meta.dir;
 const themePath = join(here, "theme.css");
@@ -1298,10 +1298,10 @@ async function build(root, { serve = false } = {}) {
   checkLinks(pages, (rel) => existsSync(join(root, rel)), allMd, diag.report);
   unlinkedFiles(allMd, seen, (rel) => !!altRe && altRe.test(rel), diag.report);
 
-  // Review state is on once a reviewed.json exists, or when asked for. Marking happens before
-  // rendering, so the pages just marked already read as reviewed in this build.
-  let reviews = await loadReviews(root);
-  if (!reviews && reviewFlag) reviews = { version: 1, pages: {} };
+  // Review markers are off unless --review asks for them, so a published site never shows
+  // them by accident. --mark-reviewed records state either way, before rendering, so pages
+  // just marked already read as reviewed when the markers are on.
+  let reviews = reviewFlag || toMark.length ? (await loadReviews(root)) ?? { version: 1, pages: {} } : null;
   if (toMark.length && checkOnly) console.warn(`  --mark-reviewed ignored: --check never writes`);
   else if (toMark.length) {
     const by = flag("--reviewer") || (await gitOut(["-C", root, "config", "user.name"])) || process.env.USER || "unknown";
@@ -1313,7 +1313,7 @@ async function build(root, { serve = false } = {}) {
     }
     await saveReviews(root, reviews);
   }
-  if (reviews) for (const p of pages) p.review = reviewState(reviews, p.mdRel, p.raw);
+  if (reviews && reviewFlag) for (const p of pages) p.review = reviewState(reviews, p.mdRel, p.raw);
 
   if (!pages.some((p) => outName(p.mdRel) === "index.html")) pages[0].asIndex = true;
   const siteTitle = cfg.title || (pages.find((p) => p.asIndex || outName(p.mdRel) === "index.html") ?? pages[0]).title;

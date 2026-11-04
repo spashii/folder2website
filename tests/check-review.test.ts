@@ -92,11 +92,14 @@ test("review marking: awaiting until marked, changed after an edit, with what ch
   await Bun.write(join(docs, "access.md"), "# Access\n\nAsk Sam for keys.\n\nKeys rotate monthly.\n");
   await Bun.write(join(docs, "team.md"), "# Team\n\nFive people.\n");
 
-  // No reviewed.json and no flag: no review markers at all.
-  await run(docs, "--out", out);
+  // Off by default: marking records state but shows nothing without --review.
+  const quiet = await run(docs, "--out", out, "--mark-reviewed", "access.md", "--reviewer", "Sameer");
+  expect(quiet.stdout.toString()).not.toContain("review:");
   expect(await Bun.file(join(out, "index.html")).text()).not.toContain('class="review-badge"');
+  expect(await Bun.file(join(out, "team.md")).text()).not.toContain("Review status");
+  expect(await Bun.file(join(out, "llms.txt")).text()).not.toContain("Awaiting review");
 
-  const marked = await run(docs, "--out", out, "--mark-reviewed", "access.md", "--reviewer", "Sameer");
+  const marked = await run(docs, "--out", out, "--review");
   expect(marked.stdout.toString()).toContain("review: 2 awaiting, 1 reviewed (reviewed.json)");
   const store = await Bun.file(join(docs, "reviewed.json")).json();
   expect(Object.keys(store.pages)).toEqual(["access.md"]);
@@ -122,24 +125,25 @@ test("review marking: awaiting until marked, changed after an edit, with what ch
 
   // Whitespace is not an edit; a changed paragraph is.
   await Bun.write(join(docs, "access.md"), "# Access\n\nAsk Sam for keys.   \n\n\n\nKeys rotate monthly.\n");
-  await run(docs, "--out", out);
+  await run(docs, "--out", out, "--review");
   expect(await Bun.file(join(out, "access.html")).text()).not.toContain('class="review-badge"');
   await Bun.write(join(docs, "access.md"), "# Access\n\nAsk Sam for keys.\n\nKeys rotate weekly.\n");
-  await run(docs, "--out", out);
+  await run(docs, "--out", out, "--review");
   const changed = await Bun.file(join(out, "access.html")).text();
   expect(changed).toContain("Changed since Sameer reviewed it less than a minute ago");
   expect(changed).toContain('<div class="rd-mod"><span class="sr-only">Edited: </span>Keys rotate <del>monthly.</del><ins>weekly.</ins></div>');
   await Bun.write(join(docs, "access.md"), "# Access\n\nAsk Sam for keys.\n\nKeys rotate weekly.\n\nA wholly new paragraph.\n");
-  await run(docs, "--out", out);
+  await run(docs, "--out", out, "--review");
   expect(await Bun.file(join(out, "access.html")).text()).toContain('<div class="rd-add"><span class="sr-only">Added: </span>A wholly new paragraph.</div>');
 
   // --check reports review state but never writes it.
   const before = await Bun.file(join(docs, "reviewed.json")).text();
-  const c = await run(docs, "--check", "--json", "--mark-reviewed", "all");
+  expect(JSON.parse((await run(docs, "--check", "--json")).stdout.toString()).review).toBeUndefined();
+  const c = await run(docs, "--check", "--json", "--review", "--mark-reviewed", "all");
   expect(JSON.parse(c.stdout.toString()).review).toEqual({ awaiting: [{ file: "README.md", state: "new" }, { file: "access.md", state: "changed" }, { file: "team.md", state: "new" }], reviewed: 0 });
   expect(await Bun.file(join(docs, "reviewed.json")).text()).toBe(before);
 
-  await run(docs, "--out", out, "--mark-reviewed", "all");
+  await run(docs, "--out", out, "--review", "--mark-reviewed", "all");
   expect(await Bun.file(join(out, "index.html")).text()).toContain('<p class="review-queue review-clear">Every page is reviewed.</p>');
 });
 
